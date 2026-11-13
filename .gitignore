@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.idea/
+.vscode/
+*.iml
+
+# Node / React
+node_modules/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# Rust / Tauri
+target/
+**/src-tauri/target/
+
+# Java / Maven
+**/target/
+*.class
+.mvn/timing.properties
+
+# Local data and models
+*.sqlite
+*.sqlite3
+*.db
+models/
+fixtures/audio/*.wav
+
+# Worktrees and local env
+.worktrees/
+wt/
+.env
+.env.*
+!.env.example
+run/pids.json
