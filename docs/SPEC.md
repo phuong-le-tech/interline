@@ -42,6 +42,7 @@ Status: draft 2, 2026-11-13. Decisions marked **[to confirm]** are tech lead ass
 - **US-3.6** I accept, edit or delete each addition; I can undo the whole enhancement.
 - **US-3.7** I choose a note template (1:1, client, interview, team meeting) that steers the enhancement.
 - **US-3.8** Without a configured LLM, the app stays useful: notes + transcript + search.
+- **US-3.9 (output budget)** An addition stays close to what it completes: at most one line more than the user fragment it hangs under, never more than three sentences, and never a paraphrase of the fragment itself. If the meeting said more, it goes to "Other points", not under my line. Rationale: the promise is that my words lead. Without a budget the model writes three times more than the user did and the page becomes the model's, which is exactly what the product exists to avoid. This budget is a prompt and validation rule, testable: for every addition, `len(addition) <= len(fragment) + one line`, and an addition that only restates its fragment is rejected.
 
 ### E4 - After the meeting
 - **US-4.1** Action items (who, what, due date if said) are extracted and listed, checkable.
