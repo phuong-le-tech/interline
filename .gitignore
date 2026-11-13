@@ -37,3 +37,13 @@ wt/
 .env.*
 !.env.example
 run/pids.json
+
+# AI tooling: project context for agents lives on the machine, never in the public repo
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
+.windsurf/
