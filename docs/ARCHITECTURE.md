@@ -398,14 +398,15 @@ Unchanged in substance from draft 1, now in `core-ai` with Spring AI:
 
 ## 13. Data model (SQLite, Flyway `V1__init.sql`)
 
-Same model as draft 1, owned by `core-persistence`. UUID v7 text ids, epoch-ms integers, WAL. Changes from draft 1 are marked `-- d2`.
+`V1__init.sql` is the M0 subset. It creates exactly the six tables needed to record and transcribe without a real OS agent: `meetings`, `capture_runs`, `speakers`, `transcript_segments`, `timeline_markers` and `settings`. Tables for people, calendar, notes, AI runs, action items, providers, templates and the full FTS triggers arrive in V2+; when each of those tables is added, its foreign-key columns in `meetings` are added by the same migration.
+
+The M0 schema is owned by `core-persistence`. UUID v7 text ids, epoch-ms integers, WAL. Changes from draft 1 are marked `-- d2`.
 
 ```sql
 CREATE TABLE meetings (
   id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL CHECK (status IN ('draft','recording','degraded','processing','done','failed')), -- d2: degraded
-  calendar_event_id TEXT REFERENCES calendar_events(id) ON DELETE SET NULL,
-  template_id TEXT REFERENCES templates(id),
+  -- calendar_event_id and template_id are added by V2+ migrations that create their tables
   language TEXT, started_at INTEGER, ended_at INTEGER,
   t0_wall_ms INTEGER,                         -- d2: session timeline origin
   audio_dir TEXT, audio_purge_at INTEGER,
@@ -420,15 +421,10 @@ CREATE TABLE capture_runs (                   -- d2: one row per agent run insid
   last_seq_mic INTEGER, last_seq_system INTEGER,
   stt_done_mic INTEGER, stt_done_system INTEGER   -- watermarks in samples
 );
-CREATE TABLE people (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, email TEXT UNIQUE, created_at INTEGER NOT NULL);
-CREATE TABLE meeting_participants (
-  meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-  PRIMARY KEY (meeting_id, person_id));
 CREATE TABLE speakers (
   id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
   source TEXT NOT NULL CHECK (source IN ('mic','system','import')),
-  label TEXT NOT NULL, person_id TEXT REFERENCES people(id) ON DELETE SET NULL);
+  label TEXT NOT NULL);
 CREATE TABLE transcript_segments (
   id INTEGER PRIMARY KEY,
   meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
@@ -442,55 +438,12 @@ CREATE TABLE timeline_markers (               -- d2: discontinuities, device cha
   id INTEGER PRIMARY KEY, meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
   at_ms INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('gap','device_change','pause','resume')),
   detail TEXT);
-CREATE TABLE note_blocks (
-  rowid_fts INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
-  meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  parent_id TEXT, position TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('heading','paragraph','bullet','todo','quote')),
-  origin TEXT NOT NULL CHECK (origin IN ('user','ai')),
-  content TEXT NOT NULL, plain_text TEXT NOT NULL, anchor_ms INTEGER,
-  client_rev INTEGER NOT NULL DEFAULT 0,      -- d2: idempotent journal replay
-  ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL,
-  ai_state TEXT CHECK (ai_state IN ('proposed','accepted','edited')),
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-CREATE TABLE block_sources (
-  block_id TEXT NOT NULL REFERENCES note_blocks(id) ON DELETE CASCADE,
-  segment_id INTEGER NOT NULL REFERENCES transcript_segments(id) ON DELETE CASCADE,
-  PRIMARY KEY (block_id, segment_id));
-CREATE TABLE note_snapshots (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('raw_user','enhanced','manual')), doc TEXT NOT NULL, created_at INTEGER NOT NULL);
-CREATE TABLE ai_runs (id TEXT PRIMARY KEY, meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('enhance','brief','followup_email','title')),
-  provider_id TEXT REFERENCES providers(id) ON DELETE SET NULL, model TEXT NOT NULL, prompt_version TEXT NOT NULL,
-  input_tokens INTEGER, output_tokens INTEGER,
-  status TEXT NOT NULL CHECK (status IN ('running','ok','invalid_output','error','cancelled')),
-  error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER);
-CREATE TABLE action_items (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  text TEXT NOT NULL, owner_label TEXT, owner_person_id TEXT REFERENCES people(id) ON DELETE SET NULL, due_date TEXT,
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','done','dismissed')),
-  source_segment_id INTEGER REFERENCES transcript_segments(id) ON DELETE SET NULL,
-  ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL, completed_at INTEGER);
-CREATE TABLE calendar_events (id TEXT PRIMARY KEY,
-  source TEXT NOT NULL CHECK (source IN ('agent','ics','manual')),   -- d2: was 'eventkit'
-  external_id TEXT, title TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
-  conference_url TEXT, attendees TEXT, synced_at INTEGER, UNIQUE (source, external_id));
-CREATE TABLE briefs (id TEXT PRIMARY KEY, calendar_event_id TEXT REFERENCES calendar_events(id) ON DELETE CASCADE,
-  meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE, content_md TEXT NOT NULL,
-  source_meeting_ids TEXT NOT NULL, ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
-CREATE TABLE providers (id TEXT PRIMARY KEY,           -- NO key here
-  kind TEXT NOT NULL CHECK (kind IN ('openai_compatible','anthropic','ollama')),
-  name TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL,
-  secret_account TEXT,                        -- d2: OS secret store account (was keychain_account)
-  supports_json_schema INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
-CREATE TABLE templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, instructions TEXT NOT NULL, builtin INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
-CREATE VIRTUAL TABLE blocks_fts USING fts5(plain_text, content='note_blocks', content_rowid='rowid_fts',
-  tokenize='unicode61 remove_diacritics 2');
-CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='transcript_segments', content_rowid='id',
-  tokenize='unicode61 remove_diacritics 2');
--- + AFTER INSERT/UPDATE/DELETE triggers keeping both FTS indexes in sync; indexes as in draft 1.
+-- V2+ tables: people, meeting_participants, note_blocks, block_sources, note_snapshots,
+-- ai_runs, action_items, calendar_events, briefs, providers, templates, blocks_fts, segments_fts
 ```
-FTS5 must be compiled into the SQLite shipped by `sqlite-jdbc` [to verify; a persistence test asserts it at M0]. Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
+
+FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` at M0 (`MigrationTest` asserts it). The full text indexes and the note/editor tables that use them arrive in V2+. Embeddings (`sqlite-vec`) are deferred until that milestone.
 
 ## 14. Packaging and distribution
 
@@ -630,26 +583,29 @@ CI matrix (GitHub Actions):
 
 ## 17. Versions
 
-Checked on the web on 2026-11-13 unless marked [to verify]. Exact versions are pinned in the build files at M0 (Maven BOMs, `Cargo.lock`, `pnpm-lock.yaml`, `Package.resolved`).
+Verified in the build files at M0, unless otherwise noted. Checked on the web on 2026-11-13 for versions not yet exercised.
 
 | Component | Version line | Status |
 |---|---|---|
-| Java | 21 LTS (Temurin) | Imposed. Note: Java 25 LTS exists; FFM is final only from 22 and Leyden AOT cache needs 24+, neither is used |
-| Spring Boot | 4.1.x (4.1.2 latest GA; 4.2 is at RC) | checked |
-| Spring AI | 2.0.x (2.0.2 GA, designed for Boot 4.0/4.1; 2.1 at RC) | checked |
-| MCP Java SDK | 2.0.x, shipped with Spring AI 2.0 | checked (via Spring AI release notes) |
-| sqlite-jdbc (xerial) | 3.54.x (3.54.1.0) | checked; FTS5 enabled [to verify] |
-| Flyway | the line managed by Spring Boot 4.1 [to verify]; SQLite module artifact name [to verify, Flyway 10+ moved databases to modules] | to verify |
-| JUnit | Jupiter API; Spring Boot 4 manages JUnit 6.x [to verify] | to verify |
-| ArchUnit, jqwik, WireMock, springdoc-openapi | latest compatible with Boot 4 [to verify each] | to verify |
-| Maven | 3.9.x with Wrapper [to verify vs Maven 4] | to verify |
-| Tauri | 2.12.x (2.12.3) | checked |
-| Tauri plugins (updater, notification, dialog) | 2.x [to verify minors] | to verify |
-| whisper.cpp | 1.9.x (1.9.5) | checked; Swift XCFramework distribution [to verify for 1.9] |
-| Silero VAD (ggml) | v6.2.0 | from draft 1 |
-| Swift toolchain / Xcode | Swift 6.x, Xcode current [to verify] | to verify |
-| React / TypeScript / Vite | 19 / 5.x / current [Vite major to verify] | partly checked in draft 1 |
-| TipTap / Tailwind CSS / shadcn/ui | 3 / 4 / current | from draft 1 |
+| Java | 21 LTS (Temurin) | Imposed. CI and `BuildTest` enforce 21 |
+| Spring Boot | 4.1.4 | verified, managed by `spring-boot-starter-parent` |
+| Spring AI | not used in M0 (no LLM pass) | deferred to M2 |
+| MCP Java SDK | not used in M0 | deferred to M3 |
+| sqlite-jdbc (xerial) | 3.54.1.0 | verified; FTS5 enabled and asserted |
+| Flyway | 12.4.0, managed by Spring Boot | verified with SQLite in `flyway-core` |
+| JUnit | Jupiter 5.13.0, managed by Spring Boot | verified |
+| jqwik | 1.10.2 | verified |
+| ArchUnit | 1.4.0 | verified |
+| WireMock | not used in M0 | out of scope |
+| springdoc-openapi | not used in M0 | out of scope |
+| Maven | 3.9.x via Wrapper | verified |
+| Tauri | 2.12.5 (Rust crate and `@tauri-apps/cli` 2.x) | verified |
+| Tauri plugins (updater, notification, dialog) | not used in M0 | out of scope |
+| whisper.cpp | not used in M0 | Swift agent out of scope |
+| Silero VAD (ggml) | not used in M0 | deferred to M1 |
+| Swift toolchain / Xcode | not used in M0 | deferred to M1 |
+| React / TypeScript / Vite | 19 / 5.7.3 / 6.4.6 | verified |
+| TipTap / Tailwind CSS / shadcn/ui | not used in M0 | UI is unstyled in M0 |
 
 ## 18. ADRs
 
@@ -664,5 +620,5 @@ Checked on the web on 2026-11-13 unless marked [to verify]. Exact versions are p
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
 | ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
 | ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, 14.2 minimum | To write (M1) |
-| ADR-010 | License MIT | To write (M0, short: decision by Phuong) |
-| ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL); numbered ADR-004 in draft 2 | To write (M0) |
+| ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
+| ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL) | [Accepted](docs/adr/ADR-011-core-owns-the-data.md) |

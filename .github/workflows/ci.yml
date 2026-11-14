@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify core
+        working-directory: services/core
+        run: ./mvnw -B verify
+      - name: Upload core jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-jar
+          path: services/core/app/target/interline-core.jar
+
+  ui:
+    needs: core
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - name: Download core jar
+        uses: actions/download-artifact@v4
+        with:
+          name: core-jar
+          path: services/core/app/target
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: apps/desktop
+        run: pnpm lint
+      - name: Type check
+        working-directory: apps/desktop
+        run: pnpm typecheck
+      - name: Install Playwright Chromium
+        working-directory: apps/desktop
+        run: pnpm exec playwright install chromium
+      - name: E2E
+        working-directory: apps/desktop
+        run: pnpm test:e2e
