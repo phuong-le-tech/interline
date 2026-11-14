@@ -1,3 +1,6 @@
 package app.interline.domain;
 
-public interface PlatformCapabilities {}
+/** Port: everything the core needs from the host OS, reached through an agent. */
+public interface PlatformCapabilities {
+    AudioCapture audioCapture();
+}
