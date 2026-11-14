@@ -11,6 +11,6 @@
 <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
 </dependencies>
 <build><plugins>
-<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.1</version></plugin>
+<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.1</version><configuration><parameters>true</parameters></configuration></plugin>
 <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.4</version><configuration><systemPropertyVariables><repo.root>${maven.multiModuleProjectDirectory}/../..</repo.root><mock.agent.jar>${maven.multiModuleProjectDirectory}/mock-agent/target/mock-agent-0.1.0-SNAPSHOT.jar</mock.agent.jar></systemPropertyVariables></configuration></plugin>
 </plugins></build></project>

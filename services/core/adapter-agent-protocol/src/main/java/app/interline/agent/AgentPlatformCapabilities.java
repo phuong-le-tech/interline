@@ -42,6 +42,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private static final Duration POLL_PERIOD = Duration.ofMillis(20);
     private static final Duration READER_JOIN = Duration.ofSeconds(2);
     private static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(2);
+    /** A freshly launched JVM needs time to say hello; the heartbeat deadline only applies after that. */
+    private static final Duration STARTUP_GRACE = Duration.ofSeconds(5);
 
     private final Config config;
     private final Clock clock;
@@ -72,7 +74,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             listener.captureUnavailable("agent_launch_failed", "The capture agent could not be started");
             return;
         }
-        supervisor = new AgentProcess(first, this::relaunch, clock, config.heartbeatInterval(), new AgentProcess.Listener() {
+        supervisor = new AgentProcess(first, this::relaunch, clock, config.heartbeatInterval(), STARTUP_GRACE, new AgentProcess.Listener() {
             @Override public void crashed(String reason, Duration restartIn, boolean unavailable) {
                 LOG.log(System.Logger.Level.WARNING, "capture agent down ({0}), restart in {1}", reason, restartIn);
                 if (unavailable) listener.captureUnavailable("agent_crash_loop", "The capture agent keeps crashing");
@@ -244,15 +246,17 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         }
     }
 
-    @Override public void acknowledge(StreamKind stream, long seq, int window) {
+    @Override public boolean acknowledge(StreamKind stream, long seq, int window) {
         Link current = link;
-        if (current == null || !current.ready || !current.process.isAlive()) return;
+        if (current == null || !current.ready || !current.process.isAlive()) return false;
         ObjectNode body = ControlMessage.nodes().objectNode()
                 .put("stream", stream.wireName()).put("seq", seq).put("window", window);
         try {
             current.connection.send(ControlMessage.event("audio.ack", body));
+            return true;
         } catch (IOException e) {
             LOG.log(System.Logger.Level.DEBUG, "ack not delivered, the agent is going away");
+            return false;
         }
     }
 

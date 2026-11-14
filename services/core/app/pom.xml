@@ -15,4 +15,4 @@
 <execution><id>packaged-core-contract</id><goals><goal>integration-test</goal><goal>verify</goal></goals><configuration><includes><include>**/BuildTest.java</include><include>**/LifecycleTest.java</include></includes></configuration></execution>
 <execution><id>packaged-agent-contract</id><goals><goal>integration-test</goal><goal>verify</goal></goals><configuration><testClassesDirectory>${maven.multiModuleProjectDirectory}/adapter-agent-protocol/target/test-classes</testClassesDirectory><includes><include>**/HandshakeTest.java</include></includes></configuration></execution>
 </executions></plugin>
-<plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><version>${spring-boot.version}</version><executions><execution><goals><goal>repackage</goal></goals></execution></executions></plugin></plugins></build></project>
+<plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><version>${spring-boot.version}</version><executions><execution><goals><goal>repackage</goal><goal>build-info</goal></goals></execution></executions></plugin></plugins></build></project>

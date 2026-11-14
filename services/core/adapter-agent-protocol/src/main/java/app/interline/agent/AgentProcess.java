@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 public final class AgentProcess implements AutoCloseable {
     public static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(2);
     private static final int MISSED_HEARTBEATS_BEFORE_KILL = 3;
+    private static final Runnable NO_NOTIFICATION = () -> { };
 
     /** Observer of supervision decisions; all methods run on the polling thread. */
     public interface Listener {
@@ -23,63 +24,82 @@ public final class AgentProcess implements AutoCloseable {
     private final Supplier<Process> restart;
     private final Clock clock;
     private final Duration deadline;
+    private final Duration startupGrace;
     private final Listener listener;
     private final RestartPolicy policy;
     private Process process;
     private Instant lastHeartbeat;
     private Instant restartAt;
     private boolean unavailable;
+    private boolean heartbeatSeen;
     private boolean closed;
 
     public AgentProcess(Process process, Supplier<Process> restart, Clock clock) {
-        this(process, restart, clock, DEFAULT_HEARTBEAT_INTERVAL, Listener.NONE);
+        this(process, restart, clock, DEFAULT_HEARTBEAT_INTERVAL, Duration.ZERO, Listener.NONE);
     }
 
     public AgentProcess(Process process, Supplier<Process> restart, Clock clock,
-                        Duration heartbeatInterval, Listener listener) {
+                        Duration heartbeatInterval, Duration startupGrace, Listener listener) {
         this.process = process;
         this.restart = restart;
         this.clock = clock;
         this.deadline = heartbeatInterval.multipliedBy(MISSED_HEARTBEATS_BEFORE_KILL);
+        this.startupGrace = startupGrace;
         this.listener = listener;
         this.policy = new RestartPolicy(clock);
         this.lastHeartbeat = clock.instant();
     }
 
-    public synchronized void heartbeatReceived() { lastHeartbeat = clock.instant(); }
+    public synchronized void heartbeatReceived() {
+        lastHeartbeat = clock.instant();
+        heartbeatSeen = true;
+    }
 
     public synchronized boolean isUnavailable() { return unavailable; }
 
-    public synchronized void poll() {
-        if (closed || unavailable) return;
-        Instant now = clock.instant();
-        if (process == null) {
-            if (!now.isBefore(restartAt)) relaunch(now);
-        } else if (!process.isAlive()) {
-            onExit("agent_exited", now);
-        } else if (Duration.between(lastHeartbeat, now).compareTo(deadline) >= 0) {
-            ProcessTree.destroy(process);
-            onExit("heartbeat_timeout", now);
+    public void poll() {
+        Runnable notification;
+        synchronized (this) {
+            notification = step();
         }
+        // Observers run outside the lock so they can call back into the supervisor or take their own locks.
+        notification.run();
     }
 
-    private void relaunch(Instant now) {
+    private Runnable step() {
+        if (closed || unavailable) return NO_NOTIFICATION;
+        Instant now = clock.instant();
+        if (process == null) {
+            return now.isBefore(restartAt) ? NO_NOTIFICATION : relaunch(now);
+        }
+        if (!process.isAlive()) return onExit("agent_exited", now);
+        if (Duration.between(lastHeartbeat, now).compareTo(heartbeatSeen ? deadline : deadline.plus(startupGrace)) >= 0) {
+            ProcessTree.destroy(process);
+            return onExit("heartbeat_timeout", now);
+        }
+        return NO_NOTIFICATION;
+    }
+
+    private Runnable relaunch(Instant now) {
         try {
             process = restart.get();
             lastHeartbeat = now;
-            listener.restarted(process);
+            heartbeatSeen = false;
+            Process launched = process;
+            return () -> listener.restarted(launched);
         } catch (RuntimeException launchFailure) {
             process = null;
-            onExit("launch_failed", now);
+            return onExit("launch_failed", now);
         }
     }
 
-    private void onExit(String reason, Instant now) {
+    private Runnable onExit(String reason, Instant now) {
         process = null;
         Duration delay = policy.onCrash();
-        unavailable = policy.isUnavailable();
+        boolean exhausted = policy.isUnavailable();
+        unavailable = exhausted;
         restartAt = now.plus(delay);
-        listener.crashed(reason, delay, unavailable);
+        return () -> listener.crashed(reason, delay, exhausted);
     }
 
     /** Stop supervising and terminate the current child and its descendants. */

@@ -6,8 +6,8 @@ public interface AudioCapture {
 
     void stop(String sessionId);
 
-    /** Tell the agent that frames up to {@code seq} are durable. Best effort, never throws. */
-    void acknowledge(StreamKind stream, long seq, int window);
+    /** Tell the agent that frames up to {@code seq} are durable. Returns false when it could not be delivered. */
+    boolean acknowledge(StreamKind stream, long seq, int window);
 
     /** Stop supervising and terminate the agent for good (no restart). */
     void terminate();
