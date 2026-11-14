@@ -204,8 +204,12 @@ class PipelineTest {
                             .map(o -> o.path("message").path("body")).filter(b -> b.path("stream").asText().equals(stream))
                             .mapToLong(b -> b.path("end_sample").asLong()).max().orElseThrow();
                     JsonNode resume = resumed.path("resume");
-                    assertThat(resume.path("acked").path(stream).asLong(-2)).isEqualTo(ack);
-                    assertThat(resume.path("next_seq").path(stream).asLong(-2)).isEqualTo(ack + 1);
+                    long resumeAcked = resume.path("acked").path(stream).asLong(-2);
+                    // Last acks can be lost in the dying agent's pipe, so the core may have acked more than the probe saw.
+                    assertThat(resumeAcked).isGreaterThanOrEqualTo(ack);
+                    assertThat(resume.path("next_seq").path(stream).asLong(-2)).isEqualTo(resumeAcked + 1);
+                    var firstRun = rows(DATA, "SELECT * FROM capture_runs WHERE meeting_id=? ORDER BY started_at,id", id).getFirst();
+                    assertThat(resumeAcked).isEqualTo(((Number) firstRun.get("last_seq_" + stream)).longValue());
                     assertThat(resume.path("stt_done_until_sample").path(stream).asLong(-2)).isEqualTo(sttDone);
                     var recovered = observations.stream().filter(o -> o.path("pid").asLong() == resumedPid)
                             .filter(o -> o.path("type").asText().equals("audio.chunk"))
