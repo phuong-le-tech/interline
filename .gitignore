@@ -19,6 +19,11 @@ target/
 **/src-tauri/target/
 
 # Java / Maven
+.jqwik-database
+**/.jqwik-database
+# Playwright
+**/test-results/
+**/playwright-report/
 **/target/
 *.class
 .mvn/timing.properties

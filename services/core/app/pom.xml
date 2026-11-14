@@ -1,0 +1,18 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><parent><groupId>app.interline</groupId><artifactId>core</artifactId><version>0.1.0-SNAPSHOT</version></parent><artifactId>app</artifactId><dependencies>
+<dependency><groupId>app.interline</groupId><artifactId>core-domain</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>app.interline</groupId><artifactId>core-persistence</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>app.interline</groupId><artifactId>core-ai</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>app.interline</groupId><artifactId>adapter-agent-protocol</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>app.interline</groupId><artifactId>mock-agent</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+<dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>1.5.1</version><scope>test</scope></dependency>
+<dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><scope>test</scope></dependency>
+<dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><scope>test</scope></dependency>
+</dependencies><build><finalName>interline-core</finalName><plugins>
+<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><configuration><excludes><exclude>**/BuildTest.java</exclude><exclude>**/LifecycleTest.java</exclude></excludes></configuration></plugin>
+<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-failsafe-plugin</artifactId><version>3.5.4</version><configuration><systemPropertyVariables><repo.root>${maven.multiModuleProjectDirectory}/../..</repo.root><mock.agent.jar>${maven.multiModuleProjectDirectory}/mock-agent/target/mock-agent-0.1.0-SNAPSHOT.jar</mock.agent.jar></systemPropertyVariables></configuration><executions>
+<execution><id>packaged-core-contract</id><goals><goal>integration-test</goal><goal>verify</goal></goals><configuration><includes><include>**/BuildTest.java</include><include>**/LifecycleTest.java</include></includes></configuration></execution>
+<execution><id>packaged-agent-contract</id><goals><goal>integration-test</goal><goal>verify</goal></goals><configuration><testClassesDirectory>${maven.multiModuleProjectDirectory}/adapter-agent-protocol/target/test-classes</testClassesDirectory><includes><include>**/HandshakeTest.java</include></includes></configuration></execution>
+</executions></plugin>
+<plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><version>${spring-boot.version}</version><executions><execution><goals><goal>repackage</goal></goals></execution></executions></plugin></plugins></build></project>
