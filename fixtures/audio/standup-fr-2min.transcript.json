@@ -1,0 +1,22 @@
+{
+  "sample_rate": 16000,
+  "samples": 1920000,
+  "segments": [
+    {"stream":"mic","seg":"m-1","start_sample":16000,"end_sample":144000,"text":"Bonjour, commencons le point quotidien."},
+    {"stream":"system","seg":"s-1","start_sample":160000,"end_sample":288000,"text":"Hier, nous avons termine la migration."},
+    {"stream":"mic","seg":"m-2","start_sample":304000,"end_sample":432000,"text":"Les tests de reprise sont maintenant prets."},
+    {"stream":"system","seg":"s-2","start_sample":448000,"end_sample":576000,"text":"Il reste un probleme sur les permissions."},
+    {"stream":"mic","seg":"m-3","start_sample":592000,"end_sample":704000,"text":"Je vais verifier le chemin de capture."},
+    {"stream":"system","seg":"s-3","start_sample":720000,"end_sample":848000,"text":"Nous devons conserver les deux pistes audio."},
+    {"stream":"mic","seg":"m-4","start_sample":864000,"end_sample":992000,"text":"La demonstration aura lieu vendredi matin."},
+    {"stream":"system","seg":"s-4","start_sample":1008000,"end_sample":1136000,"text":"Je prepare les notes pour cette demonstration."},
+    {"stream":"mic","seg":"m-5","start_sample":1152000,"end_sample":1280000,"text":"Merci, je prendrai les derniers retours."},
+    {"stream":"system","seg":"s-5","start_sample":1296000,"end_sample":1424000,"text":"Le budget reste identique pour cette semaine."},
+    {"stream":"mic","seg":"m-6","start_sample":1440000,"end_sample":1536000,"text":"La documentation est disponible."},
+    {"stream":"system","seg":"s-6","start_sample":1552000,"end_sample":1648000,"text":"Je vais la relire avant midi."},
+    {"stream":"mic","seg":"m-7","start_sample":1664000,"end_sample":1760000,"text":"Nous referons le point demain."},
+    {"stream":"system","seg":"s-7","start_sample":1776000,"end_sample":1856000,"text":"Le calendrier est a jour."},
+    {"stream":"mic","seg":"m-8","start_sample":1872000,"end_sample":1920000,"text":"Bonne journee, nous pouvons terminer."},
+    {"stream":"system","seg":"s-8","start_sample":1872000,"end_sample":1920000,"text":"Merci a tous et a demain."}
+  ]
+}

@@ -53,3 +53,22 @@ macOS 14.2 or later. System audio capture relies on Core Audio process taps, whi
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Commands
+
+Use JDK 21. M0 is currently at the red-test scaffold stage: application behavior is not implemented, so verification is expected to report failing assertions.
+
+```bash
+cd services/core
+./mvnw -B verify                           # unit tests and packaged-process contracts
+./mvnw -B -DskipTests package               # compile tests and build executable skeleton jars
+./mvnw -B -Dmaven.test.failure.ignore=true verify  # collect all red reports; exit status alone is not a test verdict
+
+cd ../../apps/desktop
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test:e2e                              # Chromium, Vite, real core jar and MockAgent
+```
+
+The AC16 native-window and clean-quit checklist is in `services/core/app/src/test/resources/AC16-manual.md`. The Tauri shell is not implemented in the red scaffold. No WAV is committed; Java pipeline tests generate synthetic stereo audio in isolated temporary directories.
