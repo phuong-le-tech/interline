@@ -22,7 +22,8 @@ class RepositoryTest {
     @Test void AC17_auditDocumentsCommandsAndVerifiedVersions() throws Exception {
         assertThat(Files.readString(ROOT.resolve("README.md"))).contains("## Commands", "./mvnw", "pnpm");
         String versions = Files.readString(ROOT.resolve("docs/ARCHITECTURE.md")).split("## 17. Versions",2)[1].split("## 18.",2)[0];
-        assertThat(versions).contains("4.1.2", "2.0.2", "3.54.1.0", "12.4.0", "1.5.1", "1.10.2");
+        assertThat(versions).contains("Spring Boot | 4.1.4", "sqlite-jdbc (xerial) | 3.54.1.0", "Flyway | 12.4.0",
+                "jqwik | 1.10.2", "ArchUnit | 1.4.0");
         assertThat(versions).doesNotContain("[to verify]");
     }
     @Test void AC17_auditTrackedTreeHasNoInstructionFilesAudioOrRecognizableSecrets() throws Exception {
