@@ -23,8 +23,10 @@ public class InterlineApplication {
         }
         SpringApplication application = new SpringApplication(InterlineApplication.class);
         application.setBannerMode(Banner.Mode.OFF);
-        application.setDefaultProperties(properties);
-        ConfigurableApplicationContext context = application.run();
+        // Command-line sources outrank application.properties, so the shell's choices always win.
+        String[] springArgs = properties.entrySet().stream()
+                .map(entry -> "--" + entry.getKey() + "=" + entry.getValue()).toArray(String[]::new);
+        ConfigurableApplicationContext context = application.run(springArgs);
         if (lifeline != null) lifeline.watch(() -> exit(context));
     }
 
