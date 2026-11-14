@@ -8,7 +8,7 @@ Your words stay your words. The machine writes in a second ink, and every additi
 
 ## Status
 
-Design and specification phase. No application code yet.
+M0 scaffold is implemented and green: Java core, Agent Protocol v1, SQLite persistence, a fixture-replaying MockAgent, local API with token auth, React UI and a thin Tauri shell. The Swift capture agent is out of scope for M0.
 
 - Product spec, architecture, data model, roadmap: [`docs/`](docs/)
 - Decisions: [`docs/adr/`](docs/adr/)
@@ -53,3 +53,24 @@ macOS 14.2 or later. System audio capture relies on Core Audio process taps, whi
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Commands
+
+Use JDK 21 and pnpm 12.16.1.
+
+```bash
+cd services/core
+./mvnw -B verify                            # all Java tests and packaged-process contracts
+./mvnw -B -DskipTests package               # build executable core and MockAgent jars
+
+cd ../../apps/desktop
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test:e2e                               # Chromium, Vite, real core jar and MockAgent
+
+# Native smoke test (macOS; requires the core jar built above)
+pnpm tauri dev
+```
+
+The AC16 native-window and clean-quit checklist is in `services/core/app/src/test/resources/AC16-manual.md`. No WAV is committed; the build generates synthetic stereo audio in isolated temporary directories. Public fixtures are in `fixtures/audio/standup-fr-2min.transcript.json`.

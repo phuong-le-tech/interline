@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://interline.app/protocol/agent/v1/schema.json",
+  "title": "Interline Agent Protocol v1 control envelope (M0 subset)",
+  "description": "Control frames (kind 0x01). Binary audio frames (kind 0x02) are specified in docs/ARCHITECTURE.md 5.4; the audio.chunk body below is the decoded header manifest used by the goldens.",
+  "type": "object",
+  "required": ["v", "t", "ts", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "t": {
+      "enum": ["hello", "hello.ack", "hello.reject", "heartbeat", "session.start", "session.started",
+               "session.stop", "session.stopped", "audio.chunk", "audio.ack", "vad.segment", "stt.final",
+               "error", "shutdown", "shutdown.ok"]
+    },
+    "id": { "type": "string" },
+    "re": { "type": "string" },
+    "ts": { "type": "integer", "minimum": 0 },
+    "body": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "t": { "const": "hello" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/hello" } } } },
+    { "if": { "properties": { "t": { "const": "hello.ack" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/helloAck" } } } },
+    { "if": { "properties": { "t": { "const": "hello.reject" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/helloReject" } } } },
+    { "if": { "properties": { "t": { "const": "heartbeat" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/heartbeat" } } } },
+    { "if": { "properties": { "t": { "const": "session.start" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sessionStart" } } } },
+    { "if": { "properties": { "t": { "const": "session.started" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sessionStarted" } } } },
+    { "if": { "properties": { "t": { "const": "session.stop" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sessionStop" } } } },
+    { "if": { "properties": { "t": { "const": "session.stopped" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sessionStopped" } } } },
+    { "if": { "properties": { "t": { "const": "audio.chunk" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/audioChunk" } } } },
+    { "if": { "properties": { "t": { "const": "audio.ack" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/audioAck" } } } },
+    { "if": { "properties": { "t": { "const": "vad.segment" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/vadSegment" } } } },
+    { "if": { "properties": { "t": { "const": "stt.final" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sttFinal" } } } },
+    { "if": { "properties": { "t": { "const": "error" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/error" } } } }
+  ],
+  "$defs": {
+    "stream": { "enum": ["mic", "system"] },
+    "range": {
+      "type": "object",
+      "required": ["min", "max"],
+      "properties": { "min": { "type": "integer", "minimum": 1 }, "max": { "type": "integer", "minimum": 1 } }
+    },
+    "hello": {
+      "type": "object",
+      "required": ["protocol", "agent", "capabilities"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/range" },
+        "agent": {
+          "type": "object",
+          "required": ["name", "version", "os", "os_version", "arch"],
+          "properties": {
+            "name": { "type": "string" }, "version": { "type": "string" }, "os": { "type": "string" },
+            "os_version": { "type": "string" }, "arch": { "type": "string" }
+          }
+        },
+        "capabilities": { "type": "object" }
+      }
+    },
+    "helloAck": {
+      "type": "object",
+      "required": ["protocol", "core_version"],
+      "properties": {
+        "protocol": { "type": "integer", "minimum": 1 },
+        "core_version": { "type": "string" },
+        "session_defaults": { "type": "object" }
+      }
+    },
+    "helloReject": {
+      "type": "object",
+      "required": ["reason", "core_supports"],
+      "properties": {
+        "reason": { "const": "protocol_version_unsupported" },
+        "core_supports": { "$ref": "#/$defs/range" }
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "properties": {
+        "stt_backlog_ms": { "type": "integer", "minimum": 0 },
+        "rss_mb": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sessionStart": {
+      "type": "object",
+      "required": ["session_id", "streams", "audio", "spool_dir", "resume"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "streams": { "type": "array", "items": { "$ref": "#/$defs/stream" } },
+        "audio": {
+          "type": "object",
+          "required": ["sample_rate", "format", "channels", "chunk_ms", "window"],
+          "properties": {
+            "sample_rate": { "type": "integer" }, "format": { "const": "s16le" }, "channels": { "type": "integer" },
+            "chunk_ms": { "type": "integer" }, "window": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "spool_dir": { "type": "string" },
+        "stt": { "type": "object" },
+        "resume": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["previous_spool_dirs", "acked", "stt_done_until_sample", "next_seq"],
+              "properties": {
+                "previous_spool_dirs": { "type": "array", "items": { "type": "string" } },
+                "acked": { "type": "object" },
+                "stt_done_until_sample": { "type": "object" },
+                "next_seq": { "type": "object" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "sessionStarted": {
+      "type": "object",
+      "required": ["session_id", "t0_wall_ms"],
+      "properties": {
+        "session_id": { "type": "string" }, "t0_wall_ms": { "type": "integer" },
+        "devices": { "type": "object" }, "permissions": { "type": "object" }
+      }
+    },
+    "sessionStop": {
+      "type": "object",
+      "required": ["session_id"],
+      "properties": { "session_id": { "type": "string" } }
+    },
+    "sessionStopped": {
+      "type": "object",
+      "required": ["session_id", "final_seq"],
+      "properties": { "session_id": { "type": "string" }, "final_seq": { "type": "object" } }
+    },
+    "audioChunk": {
+      "type": "object",
+      "required": ["stream", "flags", "seq", "first_sample", "host_time_ns"],
+      "properties": {
+        "stream": { "$ref": "#/$defs/stream" },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "seq": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "first_sample": { "type": "integer", "minimum": 0 },
+        "host_time_ns": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "audioAck": {
+      "type": "object",
+      "required": ["stream", "seq", "window"],
+      "properties": {
+        "stream": { "$ref": "#/$defs/stream" },
+        "seq": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "window": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "vadSegment": {
+      "type": "object",
+      "required": ["session_id", "stream", "seg", "start_sample", "end_sample", "state"],
+      "properties": {
+        "session_id": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" }, "seg": { "type": "string" },
+        "start_sample": { "type": "integer", "minimum": 0 },
+        "end_sample": { "type": ["integer", "null"] },
+        "state": { "enum": ["open", "closed"] }
+      }
+    },
+    "sttFinal": {
+      "type": "object",
+      "required": ["session_id", "stream", "seg", "start_sample", "end_sample", "text", "model"],
+      "properties": {
+        "session_id": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" }, "seg": { "type": "string" },
+        "start_sample": { "type": "integer", "minimum": 0 }, "end_sample": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" }, "lang": { "type": ["string", "null"] },
+        "avg_logprob": { "type": ["number", "null"] }, "model": { "type": "string" },
+        "words": { "type": ["array", "null"] }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": {
+          "enum": ["bad_frame", "unsupported_message", "protocol_version_unsupported", "invalid_request",
+                   "device_unavailable", "permission_missing", "model_load_failed", "stt_failed", "spool_io",
+                   "backpressure", "secret_not_found", "calendar_unavailable", "internal"]
+        },
+        "severity": { "enum": ["warn", "fatal"] },
+        "retryable": { "type": "boolean" },
+        "session_id": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

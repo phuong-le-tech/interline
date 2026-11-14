@@ -400,6 +400,8 @@ Unchanged in substance from draft 1, now in `core-ai` with Spring AI:
 
 Same model as draft 1, owned by `core-persistence`. UUID v7 text ids, epoch-ms integers, WAL. Changes from draft 1 are marked `-- d2`.
 
+**V1 is the M0 subset.** `V1__init.sql` creates only `meetings` (without `calendar_event_id` and `template_id`), `capture_runs`, `speakers` (without `person_id`), `transcript_segments`, `timeline_markers` and `settings`. Every other table below, the FTS indexes and the columns that reference them arrive in V2+ migrations.
+
 ```sql
 CREATE TABLE meetings (
   id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
@@ -490,7 +492,7 @@ CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='transcript_segments'
   tokenize='unicode61 remove_diacritics 2');
 -- + AFTER INSERT/UPDATE/DELETE triggers keeping both FTS indexes in sync; indexes as in draft 1.
 ```
-FTS5 must be compiled into the SQLite shipped by `sqlite-jdbc` [to verify; a persistence test asserts it at M0]. Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
+FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` (`MigrationTest` asserts it at M0). Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
 
 ## 14. Packaging and distribution
 
@@ -630,26 +632,29 @@ CI matrix (GitHub Actions):
 
 ## 17. Versions
 
-Checked on the web on 2026-11-13 unless marked [to verify]. Exact versions are pinned in the build files at M0 (Maven BOMs, `Cargo.lock`, `pnpm-lock.yaml`, `Package.resolved`).
+Verified in the build files at M0, unless otherwise noted. Checked on the web on 2026-11-13 for versions not yet exercised.
 
 | Component | Version line | Status |
 |---|---|---|
-| Java | 21 LTS (Temurin) | Imposed. Note: Java 25 LTS exists; FFM is final only from 22 and Leyden AOT cache needs 24+, neither is used |
-| Spring Boot | 4.1.x (4.1.2 latest GA; 4.2 is at RC) | checked |
-| Spring AI | 2.0.x (2.0.2 GA, designed for Boot 4.0/4.1; 2.1 at RC) | checked |
-| MCP Java SDK | 2.0.x, shipped with Spring AI 2.0 | checked (via Spring AI release notes) |
-| sqlite-jdbc (xerial) | 3.54.x (3.54.1.0) | checked; FTS5 enabled [to verify] |
-| Flyway | the line managed by Spring Boot 4.1 [to verify]; SQLite module artifact name [to verify, Flyway 10+ moved databases to modules] | to verify |
-| JUnit | Jupiter API; Spring Boot 4 manages JUnit 6.x [to verify] | to verify |
-| ArchUnit, jqwik, WireMock, springdoc-openapi | latest compatible with Boot 4 [to verify each] | to verify |
-| Maven | 3.9.x with Wrapper [to verify vs Maven 4] | to verify |
-| Tauri | 2.12.x (2.12.3) | checked |
-| Tauri plugins (updater, notification, dialog) | 2.x [to verify minors] | to verify |
-| whisper.cpp | 1.9.x (1.9.5) | checked; Swift XCFramework distribution [to verify for 1.9] |
-| Silero VAD (ggml) | v6.2.0 | from draft 1 |
-| Swift toolchain / Xcode | Swift 6.x, Xcode current [to verify] | to verify |
-| React / TypeScript / Vite | 19 / 5.x / current [Vite major to verify] | partly checked in draft 1 |
-| TipTap / Tailwind CSS / shadcn/ui | 3 / 4 / current | from draft 1 |
+| Java | 21 LTS (Temurin) | Imposed. CI and `BuildTest` enforce 21 |
+| Spring Boot | 4.1.2 | verified, `spring-boot-dependencies` BOM imported in the parent pom (latest GA on Maven Central) |
+| Spring AI | 2.0.2 | verified, BOM imported in the parent pom; no provider in M0 |
+| MCP Java SDK | not used in M0 | deferred to M3 |
+| sqlite-jdbc (xerial) | 3.54.1.0 | verified; pinned in the parent `dependencyManagement` (Boot 4.1.2 manages 3.53.4.0); FTS5 enabled and asserted |
+| Flyway | 12.4.0, managed by Spring Boot | verified with SQLite in `flyway-core` |
+| JUnit | Jupiter 6.0.3, managed by Spring Boot | verified |
+| jqwik | 1.10.2 | verified |
+| ArchUnit | 1.5.1 | verified |
+| WireMock | not used in M0 | out of scope |
+| springdoc-openapi | not used in M0 | out of scope |
+| Maven | 3.9.x via Wrapper | verified |
+| Tauri | 2.12.5 (Rust crate and `@tauri-apps/cli` 2.x) | verified |
+| Tauri plugins (updater, notification, dialog) | not used in M0 | out of scope |
+| whisper.cpp | not used in M0 | Swift agent out of scope |
+| Silero VAD (ggml) | not used in M0 | deferred to M1 |
+| Swift toolchain / Xcode | not used in M0 | deferred to M1 |
+| React / TypeScript / Vite | 19 / 5.7.3 / 6.4.6 | verified |
+| TipTap / Tailwind CSS / shadcn/ui | not used in M0 | UI is unstyled in M0 |
 
 ## 18. ADRs
 
@@ -664,5 +669,5 @@ Checked on the web on 2026-11-13 unless marked [to verify]. Exact versions are p
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
 | ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
 | ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, 14.2 minimum | To write (M1) |
-| ADR-010 | License MIT | To write (M0, short: decision by Phuong) |
-| ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL); numbered ADR-004 in draft 2 | To write (M0) |
+| ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
+| ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL) | [Accepted](docs/adr/ADR-011-core-owns-the-data.md) |

@@ -1,0 +1,15 @@
+{"v":1,"t":"hello","id":"a-1","ts":0,"body":{"protocol":{"min":1,"max":1},"agent":{"name":"mock-agent","version":"0.1.0","os":"linux","os_version":"test","arch":"x86_64"},"capabilities":{"capture":{"streams":["mic","system"],"aec":false,"device_events":false},"test_input":true}}}
+{"v":1,"t":"hello.ack","re":"a-1","ts":0,"body":{"protocol":1,"core_version":"0.1.0","session_defaults":{"window":50}}}
+{"v":1,"t":"hello.reject","re":"a-1","ts":0,"body":{"reason":"protocol_version_unsupported","core_supports":{"min":1,"max":1}}}
+{"v":1,"t":"heartbeat","ts":0,"body":{"stt_backlog_ms":0,"rss_mb":24}}
+{"v":1,"t":"session.start","id":"c-1","ts":0,"body":{"session_id":"m-test","streams":["mic","system"],"audio":{"sample_rate":16000,"format":"s16le","channels":1,"chunk_ms":100,"window":50},"spool_dir":"spool/m-test/run-1","stt":{"model_path":"models/model.bin","model_sha256":"0000000000000000000000000000000000000000000000000000000000000000","vad_model_path":"models/vad.bin","language":"en","initial_prompt":"Test meeting","min_silence_ms":500,"target_chunk_s":[5,15],"max_chunk_s":30,"overlap_ms":500,"partials":true},"resume":null}}
+{"v":1,"t":"session.started","re":"c-1","ts":0,"body":{"session_id":"m-test","t0_wall_ms":0,"devices":{},"permissions":{"microphone":"granted","system_audio":"granted"}}}
+{"v":1,"t":"session.stop","id":"c-2","ts":0,"body":{"session_id":"m-test"}}
+{"v":1,"t":"session.stopped","re":"c-2","ts":0,"body":{"session_id":"m-test","final_seq":{"mic":0,"system":0}}}
+{"v":1,"t":"audio.chunk","ts":0,"body":{"stream":"system","flags":3,"seq":4294967295,"first_sample":1600,"host_time_ns":987654321}}
+{"v":1,"t":"audio.ack","ts":0,"body":{"stream":"system","seq":0,"window":50}}
+{"v":1,"t":"vad.segment","ts":0,"body":{"session_id":"m-test","stream":"system","seg":"s-1","start_sample":0,"end_sample":1600,"state":"closed"}}
+{"v":1,"t":"stt.final","ts":0,"body":{"session_id":"m-test","stream":"system","seg":"s-1","start_sample":0,"end_sample":1600,"text":"A test transcript.","lang":"en","avg_logprob":-0.31,"model":"test-model","words":null}}
+{"v":1,"t":"error","ts":0,"body":{"code":"bad_frame","severity":"fatal","retryable":true,"message":"Invalid frame"}}
+{"v":1,"t":"shutdown","id":"c-3","ts":0,"body":{}}
+{"v":1,"t":"shutdown.ok","re":"c-3","ts":0,"body":{}}
