@@ -8,7 +8,9 @@ Your words stay your words. The machine writes in a second ink, and every additi
 
 ## Status
 
-M0 scaffold is implemented and green: Java core, Agent Protocol v1, SQLite persistence, a fixture-replaying MockAgent, local API with token auth, React UI and a thin Tauri shell. The Swift capture agent is out of scope for M0.
+M0 scaffold is green: Java core, Agent Protocol v1, SQLite persistence, a fixture-replaying MockAgent, local API with token auth, React UI and a thin Tauri shell.
+
+M1 (real macOS capture and local transcription) is implemented on the Swift agent `agents/macos-capture`: process-tap and microphone capture, whisper.cpp with Silero VAD, a conformance kit shared with the MockAgent, model download with checksum, echo suppression, crash recovery from the spool, live meters and partials in the UI. The device code is compiled and self-tested but **not yet verified on real hardware**: that needs one human sitting, see [`docs/runbooks/M1-EXIT.md`](docs/runbooks/M1-EXIT.md). Measurements are in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 - Product spec, architecture, data model, roadmap: [`docs/`](docs/)
 - Decisions: [`docs/adr/`](docs/adr/)
@@ -71,6 +73,15 @@ pnpm test:e2e                               # Chromium, Vite, real core jar and 
 
 # Native smoke test (macOS; requires the core jar built above)
 pnpm tauri dev
+```
+
+Swift agent and M1 checks (macOS, Command Line Tools are enough; `swift test` needs Xcode so the unit tests are an executable):
+
+```bash
+cd agents/macos-capture && swift build -c release && swift run CaptureSelfTest
+cd ../../services/core && ./mvnw -B verify -Pswift-agent       # conformance + crash test against the Swift agent
+scripts/fixtures/gen-speech.sh                                 # synthetic speech fixtures, never committed
+scripts/m1/no-network-check.sh 300                             # offline proof during a session
 ```
 
 The AC16 native-window and clean-quit checklist is in `services/core/app/src/test/resources/AC16-manual.md`. No WAV is committed; the build generates synthetic stereo audio in isolated temporary directories. Public fixtures are in `fixtures/audio/standup-fr-2min.transcript.json`.
