@@ -9,6 +9,8 @@ struct AgentOptions {
     var testInput: URL?
     var testSpeed = 1.0
     var simulateSilentSystem = false
+    /// Apple voice processing (echo cancellation) on the microphone; off until the sitting decides (ADR-009).
+    var voiceProcessing = false
     var bench = false
     /// Defaults for sessions and imports that do not carry their own model paths (tests, `--bench`).
     var model: URL?
@@ -43,6 +45,7 @@ struct AgentOptions {
                 guard let speed = Double(value), speed > 0 else { throw ParseError.invalid("--test-speed must be positive") }
                 options.testSpeed = speed
             case "--simulate-silent-system": options.simulateSilentSystem = true
+            case "--voice-processing": options.voiceProcessing = value != "off"
             case "--bench": options.bench = true
             case "--model": options.model = URL(fileURLWithPath: value)
             case "--vad-model": options.vadModel = URL(fileURLWithPath: value)

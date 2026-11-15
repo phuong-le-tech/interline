@@ -203,11 +203,12 @@ public class RecordingService implements CaptureListener {
     @Override public synchronized void finalSegment(FinalSegment segment) {
         if (active == null) return;
         if (!ingest.recordFinal(active.id, segment)) return;
-        recordLatency(segment);
+        long receivedAtMs = clock.millis();
+        recordLatency(segment, receivedAtMs);
         events.publish("stt.final", Map.of("meetingId", active.id, "stream", segment.stream().wireName(),
                 "seg", segment.seg(), "speaker", segment.stream().speakerLabel(),
                 "startMs", segment.startSample() / SAMPLES_PER_MS, "endMs", segment.endSample() / SAMPLES_PER_MS,
-                "text", segment.text()));
+                "text", segment.text(), "receivedAtMs", receivedAtMs));
     }
 
     @Override public synchronized void sessionStopped(String sessionId) {
@@ -242,9 +243,9 @@ public class RecordingService implements CaptureListener {
     }
 
     /** STT latency: when the core received the final, minus when its audio ended on the wall clock. */
-    private void recordLatency(FinalSegment segment) {
+    private void recordLatency(FinalSegment segment, long receivedAtMs) {
         if (active.t0WallMs < 0) return;
-        long latency = clock.millis() - (active.t0WallMs + segment.endSample() / SAMPLES_PER_MS);
+        long latency = receivedAtMs - (active.t0WallMs + segment.endSample() / SAMPLES_PER_MS);
         sessionT0.putIfAbsent(active.id, active.t0WallMs);
         sttLatencies.computeIfAbsent(active.id, id -> new ConcurrentHashMap<>())
                 .computeIfAbsent(segment.stream(), stream -> new CopyOnWriteArrayList<>()).add(latency);

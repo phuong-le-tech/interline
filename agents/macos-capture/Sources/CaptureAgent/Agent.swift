@@ -1,5 +1,6 @@
 import Foundation
 import CaptureCore
+import CaptureDevices
 import WhisperSTT
 
 /// Stands in when the speech models cannot be loaded: capture, spool, meters and permissions keep working.
@@ -105,13 +106,14 @@ final class Agent {
             return
         }
         do {
-            let source = try loadInput()
+            let source = isLive ? TestInput.empty : try loadInput()
             let started = CaptureSession(request: request, transport: transport, input: source,
                                          transcriber: transcriber, speed: options.testSpeed,
-                                         simulateSilentSystem: options.simulateSilentSystem)
+                                         simulateSilentSystem: options.simulateSilentSystem,
+                                         live: isLive ? .init(voiceProcessing: options.voiceProcessing) : nil)
             transport.send(.response(to: message, type: "session.started", [
                 "session_id": request.id, "t0_wall_ms": Int64(Date().timeIntervalSince1970 * 1000),
-                "devices": [String: Any](), "permissions": permissionStates()]))
+                "devices": isLive ? LiveCapture.currentDevices() : [String: Any](), "permissions": permissionStates()]))
             session = started
             try started.start()
         } catch {
@@ -164,12 +166,25 @@ final class Agent {
 
     private func answerPermissions(_ message: ControlMessage) {
         guard message.id != nil else { return }
+        if isLive, message.type == "permission.request" {
+            // Prompting blocks until the user answers, so it must not stall the request loop's heartbeat.
+            let permission = message.body["permission"] as? String
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                if permission == "microphone" { _ = Permissions.requestMicrophone() }
+                else if permission == "system_audio" { _ = Permissions.requestSystemAudio() }
+                transport.send(.response(to: message, type: message.type, permissionStates()))
+            }
+            return
+        }
         transport.send(.response(to: message, type: message.type, permissionStates()))
     }
 
+    private var isLive: Bool { options.testInput == nil }
+
     /// The test input touches no device and no TCC API, so there is nothing to ask the OS.
     private func permissionStates() -> [String: Any] {
-        ["microphone": "granted", "system_audio": options.simulateSilentSystem ? "unknown" : "granted"]
+        if isLive { return ["microphone": Permissions.microphone().rawValue, "system_audio": Permissions.systemAudio().rawValue] }
+        return ["microphone": "granted", "system_audio": options.simulateSilentSystem ? "unknown" : "granted"]
     }
 
     private func loadInput() throws -> TestInput {
@@ -211,7 +226,7 @@ final class Agent {
             "agent": ["name": Self.name, "version": Self.version, "os": "macos",
                       "os_version": "\(os.majorVersion).\(os.minorVersion)", "arch": Self.architecture],
             "capabilities": [
-                "capture": ["streams": ["mic", "system"], "aec": false, "device_events": false],
+                "capture": ["streams": ["mic", "system"], "aec": isLive && options.voiceProcessing, "device_events": isLive],
                 "stt": ["engine": transcriber.engine, "engine_version": "1.9.5", "partials": true,
                         "accel": "metal", "transcribe_file": true],
                 "permissions": ["microphone", "system_audio"],

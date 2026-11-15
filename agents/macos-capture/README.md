@@ -1,6 +1,39 @@
-# macOS capture - M1 RED tests
+# macOS capture agent (`interline-capture-macos`)
 
-Swift tools 6.0, macOS 14.2 minimum. This package contains compiling API skeletons, not a functioning capture agent. Behavior methods throw `NotImplemented`; the agent executable exits 10. No hardware access or TCC prompts occur. No production implementation is supplied here.
+Swift tools 6.0, macOS 14.2 minimum. The agent speaks Agent Protocol v1 on stdio (ADR-002): it captures the microphone and system audio, writes a rescue spool, streams 100 ms frames with an ack window, reports levels, and transcribes locally with whisper.cpp (Metal) and Silero VAD.
+
+Targets: `CaptureCore` (pure logic, no device API), `CaptureDevices` (process tap, microphone, device listeners, permissions), `WhisperSTT`, the `interline-capture-macos` executable and `CaptureSelfTest`.
+
+## Build and test
+
+Command Line Tools are enough (no Xcode). `swift test` does not work with them, so unit tests live in `CaptureSelfTest`.
+
+```sh
+swift build -c release
+swift run CaptureSelfTest                      # exits non-zero on any failure
+```
+
+If SwiftPM stalls downloading the whisper xcframework (it did on the development network), fetch it once and point the build at it:
+
+```sh
+mkdir -p .whisper
+curl -L -o .whisper/whisper-b5454-xcframework.zip https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-b5454-xcframework.zip
+swift package compute-checksum .whisper/whisper-b5454-xcframework.zip     # must equal the checksum in Package.swift
+unzip -q .whisper/whisper-b5454-xcframework.zip -d .whisper
+export INTERLINE_WHISPER_XCFRAMEWORK=.whisper/build-apple/whisper.xcframework
+```
+
+## Running without devices
+
+`--test-input=<stereo.wav>` (left = mic, right = system, any sample rate, `--test-speed=<n>`) runs the same resample, spool, window, level, VAD and STT path as live capture with no device and no permission, so it works headless and in CI. `--simulate-silent-system` exercises the silent-tap path. `--bench --model=<ggml> --input=<wav>` prints `{model, audio_s, wall_s, rtf, peak_rss_mb, text}`. `--model` / `--vad-model` / `--language` give defaults when the core does not send them. `--voice-processing[=off]` turns Apple's echo cancellation on the microphone on (off by default, ADR-009).
+
+## Permissions and `tauri dev`
+
+macOS attributes microphone and system audio permissions to the responsible process. In `pnpm tauri dev` that is your terminal, not Interline: grant the terminal when prompted. In the built app (`scripts/macos/build-dev-app.sh`) the agent is a grandchild of `Interline.app` and carries its own `Info.plist` (`app.interline.capture`, embedded with a linker flag) with both usage strings. Whether the prompt names Interline is spike (a) of `docs/runbooks/M1-EXIT.md`. The live device code is unverified on real hardware until that sitting.
+
+## RED-stage notes
+
+The sections below come from the test-writer and stay accurate as the contract the self-tests check.
 
 From this directory:
 
@@ -9,7 +42,7 @@ swift build -c release
 swift run CaptureSelfTest
 ```
 
-`CaptureSelfTest` is an always-on, dependency-free assertion executable, not XCTest or swift-testing. Each case maps to AC2 or AC3 and prints one line. Any failed case makes the executable exit 1. Negative cases accept only `ProtocolValidationError`, never `NotImplemented`, arbitrary I/O errors, or assertion failures. RED failures are expected until implementation exists. Test counts are discovered, not a compatibility contract.
+`CaptureSelfTest` is an always-on, dependency-free assertion executable, not XCTest or swift-testing. Each case maps to AC2 or AC3 and prints one line. Any failed case makes the executable exit 1. Negative cases accept only `ProtocolValidationError`, never `NotImplemented`, arbitrary I/O errors, or assertion failures. Test counts are discovered, not a compatibility contract.
 
 ## Binding spool contract corrections
 

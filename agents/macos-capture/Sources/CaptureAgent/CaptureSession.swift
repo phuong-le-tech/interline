@@ -1,5 +1,6 @@
 import Foundation
 import CaptureCore
+import CaptureDevices
 
 /// What `session.start` asks for, parsed once.
 struct SessionRequest {
@@ -52,6 +53,8 @@ final class CaptureSession {
     private var transcriber: Transcriber
     private let speed: Double
     private let simulateSilentSystem: Bool
+    private let liveSetup: LiveSetup?
+    private var live: LiveCapture?
     private let queue = DispatchQueue(label: "capture.session", qos: .userInteractive)
     private let detector = SilentTapDetector()
     private var timer: DispatchSourceTimer?
@@ -60,15 +63,22 @@ final class CaptureSession {
     private var firstLive = [true, true]
     private var lastSeq: [Int64] = [-1, -1]
     private var stopped = false
+    private var nextLive: [Int] = [0, 0]
+
+    /// What a live (device) session needs beyond a test input.
+    struct LiveSetup {
+        let voiceProcessing: Bool
+    }
 
     init(request: SessionRequest, transport: StdioTransport, input: TestInput, transcriber: Transcriber,
-         speed: Double, simulateSilentSystem: Bool) {
+         speed: Double, simulateSilentSystem: Bool, live: LiveSetup? = nil) {
         self.request = request
         self.transport = transport
         self.input = simulateSilentSystem ? input.zeroingSystem() : input
         self.transcriber = transcriber
         self.speed = speed
         self.simulateSilentSystem = simulateSilentSystem
+        self.liveSetup = live
         self.spool = SpoolStore(directory: request.spoolDir)
         self.window = DeliveryWindow(window: request.window, spool: spool)
         self.liveStart = [0, 0]
@@ -99,13 +109,20 @@ final class CaptureSession {
             transcriber = NullTranscriber()
         }
         try catchUpTranscription(from: resumeFrom)
-        startTimer()
+        if let liveSetup {
+            nextLive = liveStart
+            try startDevices(liveSetup)
+        } else {
+            startTimer()
+        }
     }
 
     /// Stops capture and drains STT. Returns the last sequence number captured on each stream (-1 if none).
     func stop() -> [Int64] {
         timer?.cancel()
         timer = nil
+        live?.stop()
+        live = nil
         queue.sync { stopped = true }
         transcriber.finish()
         try? spool.close()
@@ -148,6 +165,34 @@ final class CaptureSession {
         }
     }
 
+    // MARK: live devices
+
+    private func startDevices(_ setup: LiveSetup) throws {
+        let devices = LiveCapture(
+            onFrame: { [weak self] stream, pcm in self?.queue.async { self?.liveFrame(stream: stream, pcm: pcm) } },
+            onDeviceChange: { [weak self] stream, name in
+                guard let self else { return }
+                let atSample = self.queue.sync { UInt64(self.nextLive[Int(stream)] * AudioConstants.frameSamples) }
+                self.transport.send(.event("device.changed", [
+                    "session_id": self.request.id, "stream": StreamID.name(stream), "device": name, "at_sample": atSample]))
+            },
+            onFailure: { [weak self] stream, reason in
+                guard let self else { return }
+                self.transport.send(.event("error", ["code": "device_failure", "severity": "warn", "retryable": true,
+                                                     "session_id": self.request.id,
+                                                     "message": "\(StreamID.name(stream)): \(reason)"]))
+            })
+        try devices.start(voiceProcessing: setup.voiceProcessing)
+        live = devices
+    }
+
+    private func liveFrame(stream: UInt8, pcm: [Int16]) {
+        guard !stopped else { return }
+        let index = nextLive[Int(stream)]
+        nextLive[Int(stream)] += 1
+        capture(stream: stream, index: index, pcm: pcm)
+    }
+
     // MARK: pacing
 
     private func startTimer() {
@@ -179,7 +224,10 @@ final class CaptureSession {
     }
 
     private func capture(stream: UInt8, index: Int) {
-        let pcm = input.samples(stream: stream, frame: index)
+        capture(stream: stream, index: index, pcm: input.samples(stream: stream, frame: index))
+    }
+
+    private func capture(stream: UInt8, index: Int, pcm: [Int16]) {
         let frame = AudioFrame(stream: stream, flags: 0, seq: UInt32(index),
                                firstSample: UInt64(index * AudioConstants.frameSamples),
                                hostTimeNS: clock_gettime_nsec_np(CLOCK_UPTIME_RAW), pcm: pcm)
@@ -195,12 +243,17 @@ final class CaptureSession {
         lastSeq[Int(stream)] = Int64(index)
         sendLevel(stream: stream, pcm: pcm)
         transcriber.feed(frame)
-        if stream == StreamID.system, (try? detector.observe(samples: pcm, otherProcessProducingOutput: simulateSilentSystem)) == true {
+        if stream == StreamID.system, (try? detector.observe(samples: pcm, otherProcessProducingOutput: otherProcessOutputs())) == true {
             transport.send(.event("permission.denied", [
                 "session_id": request.id, "permission": "system_audio", "detection": "silent_stream",
                 "evidence": "5 s of exact zeros while another process produces output", "can_prompt_again": false,
                 "settings_uri": PermissionLinks.systemAudio]))
         }
+    }
+
+    /// The test input fakes "someone is playing audio" for the silent-tap path; live capture asks the system.
+    private func otherProcessOutputs() -> Bool {
+        liveSetup == nil ? simulateSilentSystem : LiveCapture.otherProcessProducesOutput()
     }
 
     private func sendLevel(stream: UInt8, pcm: [Int16]) {

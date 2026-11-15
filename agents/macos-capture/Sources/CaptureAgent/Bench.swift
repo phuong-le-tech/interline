@@ -3,7 +3,7 @@ import CaptureCore
 import WhisperSTT
 
 /// `--bench --model=<ggml> --input=<wav>`: transcribes the file offline and prints one JSON line,
-/// `{model, audio_s, wall_s, rtf, peak_rss_mb}`, for docs/BENCHMARKS.md. Model loading is timed apart.
+/// `{model, audio_s, wall_s, rtf, peak_rss_mb, text, ...}`, for docs/BENCHMARKS.md. Model loading is timed apart.
 enum Bench {
     static func run(_ options: AgentOptions, transcriber: WhisperTranscriber) -> Int32 {
         defer { transcriber.shutdown() }
@@ -20,8 +20,9 @@ enum Bench {
             try transcriber.preload(modelPath: model.path)
             let loadSeconds = Date().timeIntervalSince(loadStart)
             let start = Date()
+            var transcript: [String] = []
             let result = try transcriber.transcribeFile(input, stream: StreamID.mic, policy: policy) { event in
-                if case let .final(_, _, _, _, text, _, _, _) = event { print(text, to: &standardError) }
+                if case let .final(_, _, _, _, text, _, _, _) = event { transcript.append(text) }
             }
             let wall = Date().timeIntervalSince(start)
             let audio = Double(result.durationSamples) / Double(AudioConstants.sampleRate)
@@ -30,7 +31,7 @@ enum Bench {
                 "audio_s": round(audio * 100) / 100, "wall_s": round(wall * 100) / 100,
                 "rtf": audio > 0 ? round(wall / audio * 1000) / 1000 : 0,
                 "load_s": round(loadSeconds * 100) / 100, "peak_rss_mb": peakResidentMegabytes(),
-                "segments": result.segments]
+                "segments": result.segments, "text": transcript.joined(separator: " ")]
             let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
             FileHandle.standardOutput.write(data + Data("\n".utf8))
             return ExitCode.ok
@@ -47,8 +48,3 @@ enum Bench {
     }
 }
 
-/// Recognised text goes to stderr in bench mode so stdout stays one parseable JSON line.
-struct StandardError: TextOutputStream {
-    mutating func write(_ string: String) { FileHandle.standardError.write(Data(string.utf8)) }
-}
-nonisolated(unsafe) var standardError = StandardError()

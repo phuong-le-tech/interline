@@ -368,6 +368,21 @@ test("AC3_unknown_request_reaches_dispatch_for_unsupported_response") {
     let encoded = try object(WireCodec.encodeControl(decoded))
     try require(encoded["t"] as? String == "not.a.message" && encoded["id"] as? String == "c-unknown", "decoder must preserve unknown request type and correlation for unsupported_message dispatch")
 }
+test("AC2_frame_assembler_reframes_odd_chunks_to_100ms_without_loss") {
+    var assembler = FrameAssembler()
+    var emitted: [[Int16]] = []
+    var next: Int16 = 0
+    for size in [1, 479, 1120, 4000, 1, 2999] {
+        let chunk = (0..<size).map { _ -> Int16 in defer { next &+= 1 }; return next }
+        emitted += assembler.push(chunk)
+    }
+    let total = 1 + 479 + 1120 + 4000 + 1 + 2999
+    try require(emitted.count == total / 1600, "expected \(total / 1600) frames, got \(emitted.count)")
+    try require(emitted.allSatisfy { $0.count == 1600 }, "every frame must hold exactly 1600 samples")
+    try require(assembler.pendingSamples == total % 1600, "the remainder must wait for the next chunk")
+    let flat = emitted.flatMap { $0 }
+    try require(flat.enumerated().allSatisfy { Int16(truncatingIfNeeded: $0.offset) == $0.element }, "samples must stay in order")
+}
 var failures = 0
 for (name, body) in cases {
     do { try body(); print("PASS \(name)") }

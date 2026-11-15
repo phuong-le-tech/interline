@@ -6,6 +6,9 @@ public struct TestInput {
     public let mic: [Int16]
     public let system: [Int16]
 
+    /// Placeholder for sessions fed by the devices instead of a recording.
+    public static let empty = TestInput(mic: [], system: [])
+
     public var frameCount: Int { (max(mic.count, system.count) + AudioConstants.frameSamples - 1) / AudioConstants.frameSamples }
 
     /// The 1600-sample frame at `index` of `stream`, zero padded past the end of the recording.

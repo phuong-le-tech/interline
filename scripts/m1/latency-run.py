@@ -87,13 +87,13 @@ def collect_finals(core: Core, finals: list, stop: threading.Event) -> None:
     with urllib.request.urlopen(request) as stream:
         name = None
         for raw in stream:
-            received = time.time_ns() // 1_000_000
             line = raw.decode().rstrip("\n")
             if line.startswith("event:"):
                 name = line[6:].strip()
             elif line.startswith("data:") and name == "stt.final":
                 data = json.loads(line[5:])
-                finals.append({"stream": data["stream"], "receipt_wall_ms": received, "end_ms": data["endMs"]})
+                # The core stamps the instant it received the final from the agent; the SSE hop would add noise.
+                finals.append({"stream": data["stream"], "receipt_wall_ms": data["receivedAtMs"], "end_ms": data["endMs"]})
             if stop.is_set():
                 return
 

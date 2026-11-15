@@ -28,7 +28,10 @@ let package = Package(
         .target(name: "CaptureDevices", dependencies: ["CaptureCore"]),
         whisperBinary,
         .target(name: "WhisperSTT", dependencies: ["CaptureCore", "whisper"]),
-        .executableTarget(name: "CaptureAgent", dependencies: ["CaptureCore", "CaptureDevices", "WhisperSTT"]),
+        .executableTarget(name: "CaptureAgent", dependencies: ["CaptureCore", "CaptureDevices", "WhisperSTT"],
+                          // TCC reads the usage strings from the binary itself; a bare executable has no bundle.
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT",
+                                                         "-Xlinker", "__info_plist", "-Xlinker", "Resources/Info.plist"])]),
         .executableTarget(name: "CaptureSelfTest", dependencies: ["CaptureCore", "CaptureDevices"],
                           swiftSettings: [.swiftLanguageMode(.v6)])
     ],
