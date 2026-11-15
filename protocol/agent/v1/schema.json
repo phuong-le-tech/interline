@@ -10,7 +10,9 @@
     "t": {
       "enum": ["hello", "hello.ack", "hello.reject", "heartbeat", "session.start", "session.started",
                "session.stop", "session.stopped", "audio.chunk", "audio.ack", "vad.segment", "stt.final",
-               "error", "shutdown", "shutdown.ok"]
+               "error", "shutdown", "shutdown.ok",
+               "level", "stt.partial", "device.changed", "permission.status", "permission.request",
+               "permission.denied", "transcribe.file", "transcribe.file.done"]
     },
     "id": { "type": "string" },
     "re": { "type": "string" },
@@ -30,9 +32,75 @@
     { "if": { "properties": { "t": { "const": "audio.ack" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/audioAck" } } } },
     { "if": { "properties": { "t": { "const": "vad.segment" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/vadSegment" } } } },
     { "if": { "properties": { "t": { "const": "stt.final" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sttFinal" } } } },
-    { "if": { "properties": { "t": { "const": "error" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/error" } } } }
+    { "if": { "properties": { "t": { "const": "error" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/error" } } } },
+    { "if": { "properties": { "t": { "const": "level" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/level" } } } },
+    { "if": { "properties": { "t": { "const": "stt.partial" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/sttPartial" } } } },
+    { "if": { "properties": { "t": { "const": "device.changed" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/deviceChanged" } } } },
+    { "if": { "properties": { "t": { "const": "permission.status" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionMessage" } } } },
+    { "if": { "properties": { "t": { "const": "permission.request" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionMessage" } } } },
+    { "if": { "properties": { "t": { "const": "permission.denied" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionDenied" } } } },
+    { "if": { "properties": { "t": { "const": "transcribe.file" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFile" } } } },
+    { "if": { "properties": { "t": { "const": "transcribe.file.done" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFileDone" } } } }
   ],
   "$defs": {
+    "permissionState": { "enum": ["granted", "denied", "not_determined", "restricted", "unknown"] },
+    "level": {
+      "type": "object",
+      "required": ["session_id", "stream", "rms"],
+      "properties": {
+        "session_id": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" },
+        "rms": { "type": "number", "minimum": 0, "maximum": 1 }, "peak": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "sttPartial": {
+      "type": "object",
+      "required": ["session_id", "stream", "seg", "rev", "start_sample", "text"],
+      "properties": {
+        "session_id": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" }, "seg": { "type": "string" },
+        "rev": { "type": "integer", "minimum": 0 }, "start_sample": { "type": "integer", "minimum": 0 },
+        "end_sample": { "type": ["integer", "null"] }, "text": { "type": "string" }
+      }
+    },
+    "deviceChanged": {
+      "type": "object",
+      "required": ["session_id", "stream"],
+      "properties": {
+        "session_id": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" },
+        "device": { "type": ["string", "null"] }, "at_sample": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "permissionMessage": {
+      "type": "object",
+      "description": "Request: permission.status carries 'permissions', permission.request carries 'permission'. Response: current states; a status query never prompts.",
+      "properties": {
+        "permissions": { "type": "array", "items": { "enum": ["microphone", "system_audio"] } },
+        "permission": { "enum": ["microphone", "system_audio"] },
+        "microphone": { "$ref": "#/$defs/permissionState" },
+        "system_audio": { "$ref": "#/$defs/permissionState" }
+      }
+    },
+    "permissionDenied": {
+      "type": "object",
+      "required": ["permission", "detection", "settings_uri"],
+      "properties": {
+        "session_id": { "type": "string" }, "permission": { "enum": ["microphone", "system_audio"] },
+        "detection": { "enum": ["silent_stream", "tcc_denied"] }, "settings_uri": { "type": "string" }
+      }
+    },
+    "transcribeFile": {
+      "type": "object",
+      "required": ["job_id", "path", "stream"],
+      "properties": {
+        "job_id": { "type": "string" }, "path": { "type": "string" }, "stream": { "$ref": "#/$defs/stream" }, "stt": { "type": "object" }
+      }
+    },
+    "transcribeFileDone": {
+      "type": "object",
+      "required": ["job_id", "segments", "duration_samples"],
+      "properties": {
+        "job_id": { "type": "string" }, "segments": { "type": "integer", "minimum": 0 }, "duration_samples": { "type": "integer", "minimum": 0 }
+      }
+    },
     "stream": { "enum": ["mic", "system"] },
     "range": {
       "type": "object",
