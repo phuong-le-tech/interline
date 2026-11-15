@@ -62,3 +62,5 @@ fixtures/**/*.caf
 *.p12
 *.keychain-db
 .whisper/
+!services/core/app/src/main/resources/models/
+!services/core/app/src/main/resources/models/catalog.json
