@@ -259,7 +259,7 @@ public class RecordingService implements CaptureListener {
         for (StreamKind stream : StreamKind.values()) {
             List<Long> sorted = perStream.getOrDefault(stream, List.of()).stream().sorted().toList();
             if (sorted.isEmpty()) continue;
-            stats.put(stream.wireName(), Map.of("count", sorted.size(), "median_ms", percentile(sorted, 50),
+            stats.put(stream.wireName(), Map.of("count", sorted.size(), "median_ms", median(sorted),
                     "p95_ms", percentile(sorted, 95)));
         }
         return stats;
@@ -268,6 +268,12 @@ public class RecordingService implements CaptureListener {
     /** Wall clock (epoch ms) the agent reported for sample zero, so a client can recompute a latency itself. */
     public Long sessionT0WallMs(String meetingId) {
         return sessionT0.get(meetingId);
+    }
+
+    /** The middle value, or the mean of the two middle values for an even count. */
+    private static long median(List<Long> sorted) {
+        int middle = sorted.size() / 2;
+        return sorted.size() % 2 == 1 ? sorted.get(middle) : (sorted.get(middle - 1) + sorted.get(middle)) / 2;
     }
 
     private static long percentile(List<Long> sorted, int percent) {
