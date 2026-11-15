@@ -1,0 +1,29 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>app.interline</groupId><artifactId>core</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>agent-conformance</artifactId>
+  <name>Agent process conformance (tests only)</name>
+  <properties>
+    <interline.conformance.agent></interline.conformance.agent>
+    <interline.conformance.agentArgs>[]</interline.conformance.agentArgs>
+  </properties>
+  <dependencies>
+    <!-- Reactor ordering ensures package produces the executable jar before these tests. -->
+    <dependency><groupId>app.interline</groupId><artifactId>mock-agent</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+  </dependencies>
+  <build><plugins><plugin>
+    <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+    <configuration><systemPropertyVariables>
+      <interline.conformance.agent>${interline.conformance.agent}</interline.conformance.agent>
+      <interline.conformance.agentArgs>${interline.conformance.agentArgs}</interline.conformance.agentArgs>
+    </systemPropertyVariables></configuration>
+  </plugin></plugins></build>
+  <profiles><profile>
+    <id>swift-agent</id>
+    <!-- Opt-in skeleton: build the Swift executable separately. No TCC or hardware. -->
+    <properties>
+      <interline.conformance.agent>${maven.multiModuleProjectDirectory}/../../agents/macos-capture/.build/release/interline-capture-macos</interline.conformance.agent>
+      <interline.conformance.agentArgs>["--test-input={wav}"]</interline.conformance.agentArgs>
+    </properties>
+  </profile></profiles>
+</project>
