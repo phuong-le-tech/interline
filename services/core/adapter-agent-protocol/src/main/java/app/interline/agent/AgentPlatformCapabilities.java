@@ -6,6 +6,7 @@ import app.interline.domain.AudioFrame;
 import app.interline.domain.CaptureListener;
 import app.interline.domain.CaptureRequest;
 import app.interline.domain.FinalSegment;
+import app.interline.domain.PartialSegment;
 import app.interline.domain.PlatformCapabilities;
 import app.interline.domain.ResumeState;
 import app.interline.domain.StreamKind;
@@ -183,9 +184,20 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
                             body.path("text").asText(), body.path("model").asText("unknown"),
                             body.hasNonNull("avg_logprob") ? body.path("avg_logprob").asDouble() : null)));
             case "session.stopped" -> listener.sessionStopped(body.path("session_id").asText());
+            case "level" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.level(body.path("session_id").asText(), stream, body.path("rms").asDouble()));
+            case "stt.partial" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.partialSegment(body.path("session_id").asText(), new PartialSegment(stream,
+                            body.path("seg").asText(), body.path("rev").asLong(), body.path("start_sample").asLong(),
+                            body.path("text").asText())));
+            case "device.changed" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.deviceChanged(body.path("session_id").asText(), stream,
+                            body.path("device").asText(""), body.path("at_sample").asLong()));
+            case "permission.denied" -> listener.permissionDenied(body.path("session_id").asText(null),
+                    body.path("permission").asText(), body.path("detection").asText(), body.path("settings_uri").asText());
             case "shutdown.ok" -> shutdownAcknowledged.countDown();
             case "error" -> onError(message);
-            default -> { /* vad.segment and unknown events carry nothing the core persists in M0 */ }
+            default -> { /* vad.segment and unknown events carry nothing the core persists */ }
         }
     }
 

@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Standalone Agent Protocol v1 agent that replays a fixture instead of capturing audio. It is spawned and
@@ -20,6 +22,8 @@ public final class MockAgent {
     static final int EXIT_PROTOCOL_MISMATCH = 3;
     private static final String AGENT_NAME = "mock-agent";
     private static final String AGENT_VERSION = "0.1.0";
+    private static final String STT_ENGINE = "scripted";
+    private static final int DEFAULT_WINDOW = 50;
     private static final long HEARTBEAT_PERIOD_MS = 2000;
     private static final long PLAYBACK_JOIN_MS = 2000;
 
@@ -76,6 +80,8 @@ public final class MockAgent {
         switch (message.type()) {
             case "session.start" -> startSession(message);
             case "session.stop" -> stopSession(message);
+            case "permission.status", "permission.request" -> answerPermissions(message);
+            case "transcribe.file" -> transcribeFile(message);
             case "audio.ack" -> {
                 CaptureRun current = run;
                 if (current != null) {
@@ -111,7 +117,8 @@ public final class MockAgent {
             return;
         }
         loadFixtureOnce();
-        run = new CaptureRun(connection, options, script, pcm, sessionId, resumeOf(request.body().path("resume")));
+        int window = request.body().path("audio").path("window").asInt(DEFAULT_WINDOW);
+        run = new CaptureRun(connection, options, script, pcm, sessionId, window, resumeOf(request.body().path("resume")));
         ObjectNode started = ControlMessage.nodes().objectNode().put("session_id", sessionId)
                 .put("t0_wall_ms", System.currentTimeMillis());
         started.putObject("devices");
@@ -143,6 +150,41 @@ public final class MockAgent {
         ObjectNode body = ControlMessage.nodes().objectNode().put("session_id", request.body().path("session_id").asText());
         body.putObject("final_seq").put("mic", lastSeq[0]).put("system", lastSeq[1]);
         connection.send(ControlMessage.response(request.id(), "session.stopped", body));
+    }
+
+    /** The mock never prompts: both permissions are simply reported, mirroring the status query. */
+    private void answerPermissions(ControlMessage request) throws IOException {
+        if (request.id() == null) return;
+        ObjectNode body = ControlMessage.nodes().objectNode()
+                .put("microphone", "granted").put("system_audio", options.denySystemAudio() ? "denied" : "granted");
+        connection.send(ControlMessage.response(request.id(), request.type(), body));
+    }
+
+    /** Scripted import: the script regions of the requested stream that fit the file, else one final over all of it. */
+    private void transcribeFile(ControlMessage request) throws IOException {
+        String jobId = request.body().path("job_id").asText();
+        String stream = request.body().path("stream").asText();
+        long durationSamples;
+        try {
+            loadFixtureOnce();
+            durationSamples = FileImport.durationSamples(Path.of(request.body().path("path").asText()));
+        } catch (IOException e) {
+            connection.send(ControlMessage.response(request.id(), "error",
+                    error("invalid_request", "warn", "Cannot read import file: " + e.getMessage(), null)));
+            return;
+        }
+        List<Region> regions = FileImport.regionsFor(script, stream, durationSamples);
+        for (Region region : regions) {
+            ObjectNode body = ControlMessage.nodes().objectNode().put("session_id", jobId).put("stream", stream)
+                    .put("seg", region.seg()).put("start_sample", region.startSample())
+                    .put("end_sample", region.endSample()).put("text", region.text())
+                    .put("lang", "fr").put("avg_logprob", -0.3).put("model", "mock-script");
+            body.putNull("words");
+            connection.send(ControlMessage.event("stt.final", body));
+        }
+        ObjectNode done = ControlMessage.nodes().objectNode().put("job_id", jobId)
+                .put("segments", regions.size()).put("duration_samples", durationSamples);
+        connection.send(ControlMessage.response(request.id(), "transcribe.file.done", done));
     }
 
     private long[] stopPlayback() {
@@ -178,8 +220,9 @@ public final class MockAgent {
         ObjectNode capabilities = body.putObject("capabilities");
         ObjectNode capture = capabilities.putObject("capture");
         capture.putArray("streams").add("mic").add("system");
-        capture.put("aec", false).put("device_events", false);
+        capture.put("aec", false).put("device_events", options.deviceChangeAtSample() >= 0);
         capabilities.put("test_input", true);
+        capabilities.putObject("stt").put("engine", STT_ENGINE);
         return body;
     }
 

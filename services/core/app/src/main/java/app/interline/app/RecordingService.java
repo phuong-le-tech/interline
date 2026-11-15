@@ -7,6 +7,7 @@ import app.interline.domain.CaptureListener;
 import app.interline.domain.CaptureRequest;
 import app.interline.domain.FinalSegment;
 import app.interline.domain.MeetingStatus;
+import app.interline.domain.PartialSegment;
 import app.interline.domain.ResumeState;
 import app.interline.domain.StreamKind;
 import app.interline.domain.UuidV7;
@@ -201,6 +202,33 @@ public class RecordingService implements CaptureListener {
     // ---- internals ----------------------------------------------------------------------------------------
 
     private static final long SAMPLES_PER_MS = 16;
+
+    @Override public synchronized void level(String sessionId, StreamKind stream, double rms) {
+        if (!isActive(sessionId)) return;
+        events.publish("level", Map.of("meetingId", sessionId, "stream", stream.wireName(), "rms", rms));
+    }
+
+    @Override public synchronized void partialSegment(String sessionId, PartialSegment partial) {
+        if (!isActive(sessionId)) return;
+        events.publish("stt.partial", Map.of("meetingId", sessionId, "stream", partial.stream().wireName(),
+                "seg", partial.seg(), "rev", partial.revision(), "speaker", partial.stream().speakerLabel(),
+                "startMs", partial.startSample() / SAMPLES_PER_MS, "text", partial.text()));
+    }
+
+    @Override public synchronized void deviceChanged(String sessionId, StreamKind stream, String device, long atSample) {
+        if (!isActive(sessionId)) return;
+        store.addDeviceChangeMarker(sessionId, atSample / SAMPLES_PER_MS, stream.wireName() + ": " + device);
+        events.publish("device.changed", Map.of("meetingId", sessionId, "stream", stream.wireName(), "device", device));
+    }
+
+    @Override public synchronized void permissionDenied(String sessionId, String permission, String detection, String settingsUri) {
+        events.publish("permission.denied", Map.of("meetingId", active == null ? "" : active.id,
+                "permission", permission, "detection", detection, "settings_uri", settingsUri));
+    }
+
+    private boolean isActive(String sessionId) {
+        return active != null && active.id.equals(sessionId);
+    }
 
     private void sendSessionStart() {
         Meeting meeting = active;

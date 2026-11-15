@@ -105,6 +105,11 @@ public final class CaptureStore {
                 .params(meetingId, atMs, detail).update());
     }
 
+    public void addDeviceChangeMarker(String meetingId, long atMs, String detail) {
+        database.write(db -> db.sql("INSERT INTO timeline_markers(meeting_id, at_ms, kind, detail) VALUES (?, ?, 'device_change', ?)")
+                .params(meetingId, atMs, detail).update());
+    }
+
     public List<MeetingRow> listMeetings() {
         return database.read(db -> db.sql("SELECT id, title, status, started_at, ended_at FROM meetings "
                         + "WHERE deleted_at IS NULL ORDER BY created_at DESC, id DESC")
