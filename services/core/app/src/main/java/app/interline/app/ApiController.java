@@ -2,6 +2,7 @@ package app.interline.app;
 
 import app.interline.persistence.CaptureStore;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,7 +23,10 @@ class ApiController {
     private final DurableCaptureIngest ingest;
     private final EventBus events;
 
-    ApiController(RecordingService recording, DurableCaptureIngest ingest, EventBus events) {
+    private final ModelService models;
+
+    ApiController(RecordingService recording, DurableCaptureIngest ingest, EventBus events, ModelService models) {
+        this.models = models;
         this.recording = recording;
         this.ingest = ingest;
         this.events = events;
@@ -57,6 +61,25 @@ class ApiController {
         if (store.findMeeting(id).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown meeting");
         return store.transcript(id).stream().map(row -> new TranscriptLine(row.stream(), row.seg(), row.speaker(),
                 row.startMs(), row.endMs(), row.text())).toList();
+    }
+
+    @GetMapping("/models")
+    List<Map<String, Object>> models() {
+        return models.statuses().stream().map(ModelService::view).toList();
+    }
+
+    /** The one place a model is fetched: only on this explicit request, never at boot or while recording. */
+    @PostMapping("/models/{id}/download")
+    ResponseEntity<Map<String, Object>> downloadModel(@PathVariable("id") String id) {
+        var entry = models.find(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown model"));
+        boolean started = models.startDownload(entry);
+        return ResponseEntity.accepted().body(Map.of("id", id, "started", started));
+    }
+
+    @GetMapping("/meetings/{id}/stats")
+    Map<String, Object> stats(@PathVariable("id") String id) {
+        if (ingest.store().findMeeting(id).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown meeting");
+        return Map.of("sttLatencyMs", recording.sttLatencyStats(id));
     }
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

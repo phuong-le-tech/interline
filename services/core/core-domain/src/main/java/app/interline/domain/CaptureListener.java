@@ -7,7 +7,7 @@ public interface CaptureListener {
     void agentConnected(AgentInfo agent);
     void agentLost(String reason);
     void captureUnavailable(String code, String message);
-    void sessionStarted(String sessionId);
+    void sessionStarted(String sessionId, long t0WallMs);
     void sessionFailed(String sessionId, String code, String message);
     void audio(List<AudioFrame> frames);
     void finalSegment(FinalSegment segment);
@@ -23,4 +23,12 @@ public interface CaptureListener {
 
     /** The OS refuses (or silently mutes) a capture source; {@code settingsUri} opens the matching settings pane. */
     void permissionDenied(String sessionId, String permission, String detection, String settingsUri);
+
+    /** A final segment of an offline import, positioned relative to the start of the imported file. */
+    void importedSegment(String jobId, FinalSegment segment);
+
+    void importFinished(String jobId, int segments);
+
+    /** The agent refused or failed an import; the job stays pending for the next agent. */
+    void importFailed(String jobId, String code, String message);
 }

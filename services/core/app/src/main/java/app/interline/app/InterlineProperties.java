@@ -20,7 +20,15 @@ public record InterlineProperties(
         @DefaultValue List<String> agentArgs,
         @DefaultValue List<String> allowedOrigins,
         @DefaultValue("2s") Duration agentHeartbeatInterval,
-        String parent) {
+        String parent,
+        @DefaultValue Echo echo,
+        @DefaultValue Models models) {
+
+    /** {@code aec}: forces the echo threshold for tests; unset means "ask the agent's capabilities". */
+    public record Echo(Boolean aec) { }
+
+    /** {@code catalog}: a catalog file replacing the bundled one, for tests against a local origin. */
+    public record Models(Path catalog) { }
 
     public boolean hasAgent() { return agent != null && !agent.isBlank(); }
 
