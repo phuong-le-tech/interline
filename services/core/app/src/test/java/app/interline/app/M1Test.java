@@ -63,7 +63,7 @@ class M1Test {
     }
 
     @Test void AC5_restartAfterRealSigkillReplaysFramesAndPersistsEveryOutsideGapUtteranceOnce() throws Exception {
-        Path launcher = PipelineAgentProbe.launcher(data, false);
+        Path launcher = M1AgentProbe.launcher(data, false);
         try (var probe = new PipelineAgentProbe(data);
              var context = boot(data, launcher, agentArgs(fixture(data), null)); var events = new Events(port(context))) {
             restartAssertions(context, events, probe);
@@ -340,7 +340,7 @@ class M1Test {
                     .as("Startup marks abandoned meetings recovered without requiring an agent")
                     .containsExactly(Map.of("status", "recovered"));
         }
-        Path launcher = PipelineAgentProbe.launcher(data, false);
+        Path launcher = M1AgentProbe.launcher(data, false);
         try (var probe = new PipelineAgentProbe(data)) {
             for (int launch = 0; launch < 2; launch++) {
                 try (var context = boot(data, launcher, agentArgs(fixture(data), null))) {

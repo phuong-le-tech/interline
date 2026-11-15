@@ -83,11 +83,7 @@ public final class PipelineAgentProbe implements AutoCloseable {
             });
             copy(child.getInputStream(), System.out, log, "agent", dir, audio, meeting);
             child.waitFor(); input.interrupt();
-            // A JVM with a thread blocked on stdin takes ~2 s to exit on macOS and holds the stdout pipe open that
-            // long, so the supervisor would see the dead agent late. SIGKILL ourselves instead of exiting.
-            int exit = child.exitValue();
-            new ProcessBuilder("kill", "-9", Long.toString(ProcessHandle.current().pid())).start().waitFor();
-            Runtime.getRuntime().halt(exit);
+            System.exit(child.exitValue());
         } finally { child.destroyForcibly(); child.waitFor(2, TimeUnit.SECONDS); }
     }
 
