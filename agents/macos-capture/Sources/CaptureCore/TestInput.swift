@@ -40,6 +40,14 @@ public struct WavFile {
 
     public var durationSamples16k: Int { Int((Double(samples.count / channels) * 16000 / Double(sampleRate)).rounded()) }
 
+    /// All channels averaged into one.
+    public func mixedToMono() -> [Float] {
+        guard channels > 1 else { return samples }
+        return stride(from: 0, to: samples.count, by: channels).map { start in
+            (0..<channels).reduce(Float(0)) { $0 + samples[start + $1] } / Float(channels)
+        }
+    }
+
     public static func read(_ url: URL) throws -> WavFile {
         let data = try Data(contentsOf: url)
         let bytes = [UInt8](data)

@@ -1,6 +1,19 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// whisper.cpp v1.9.5 (release asset of build tag b5454), prebuilt with Metal and the shader library embedded.
+// SwiftPM's own downloader can stall on some networks; INTERLINE_WHISPER_XCFRAMEWORK points at a copy of the same
+// zip fetched with curl (verify its sha256 against the checksum below).
+let whisperBinary: Target = {
+    if let local = Context.environment["INTERLINE_WHISPER_XCFRAMEWORK"], !local.isEmpty {
+        return .binaryTarget(name: "whisper", path: local)
+    }
+    return .binaryTarget(
+        name: "whisper",
+        url: "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-b5454-xcframework.zip",
+        checksum: "e57f8c48933000acabc13bb913fbe82805d483a2deff692cc6738836bd92393b")
+}()
+
 let package = Package(
     name: "MacOSCapture",
     platforms: [.macOS("14.2")],
@@ -13,7 +26,9 @@ let package = Package(
     targets: [
         .target(name: "CaptureCore"),
         .target(name: "CaptureDevices", dependencies: ["CaptureCore"]),
-        .executableTarget(name: "CaptureAgent", dependencies: ["CaptureCore", "CaptureDevices"]),
+        whisperBinary,
+        .target(name: "WhisperSTT", dependencies: ["CaptureCore", "whisper"]),
+        .executableTarget(name: "CaptureAgent", dependencies: ["CaptureCore", "CaptureDevices", "WhisperSTT"]),
         .executableTarget(name: "CaptureSelfTest", dependencies: ["CaptureCore", "CaptureDevices"],
                           swiftSettings: [.swiftLanguageMode(.v6)])
     ],

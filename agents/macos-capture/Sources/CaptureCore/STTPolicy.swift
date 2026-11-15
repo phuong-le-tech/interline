@@ -60,4 +60,11 @@ public protocol Transcriber: AnyObject {
     func feed(_ frame: AudioFrame)
     /// Cut the open region now (end of input or stop) and wait until everything pending has been emitted.
     func finish()
+    /// Releases the models. The process must call this before it exits: freeing GPU resources from a static
+    /// destructor aborts inside the Metal backend.
+    func shutdown()
+    /// Offline import of an audio file: finals go through `emit`; returns the number of finals and the
+    /// length of the file in 16 kHz samples.
+    func transcribeFile(_ url: URL, stream: UInt8, policy: STTPolicy,
+                        emit: @escaping (TranscriptEvent) -> Void) throws -> (segments: Int, durationSamples: Int)
 }

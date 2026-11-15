@@ -10,8 +10,11 @@ struct AgentOptions {
     var testSpeed = 1.0
     var simulateSilentSystem = false
     var bench = false
-    var benchModel: URL?
+    /// Defaults for sessions and imports that do not carry their own model paths (tests, `--bench`).
+    var model: URL?
+    var vadModel: URL?
     var benchInput: URL?
+    var benchLanguage: String?
 
     enum ParseError: Error, CustomStringConvertible {
         case unknown(String)
@@ -41,8 +44,10 @@ struct AgentOptions {
                 options.testSpeed = speed
             case "--simulate-silent-system": options.simulateSilentSystem = true
             case "--bench": options.bench = true
-            case "--model": options.benchModel = URL(fileURLWithPath: value)
+            case "--model": options.model = URL(fileURLWithPath: value)
+            case "--vad-model": options.vadModel = URL(fileURLWithPath: value)
             case "--input": options.benchInput = URL(fileURLWithPath: value)
+            case "--language": options.benchLanguage = value
             default: throw ParseError.unknown(argument)
             }
         }

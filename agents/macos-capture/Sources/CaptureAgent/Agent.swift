@@ -1,13 +1,19 @@
 import Foundation
 import CaptureCore
+import WhisperSTT
 
-/// Used when no speech model is configured: capture, spool, meters and permissions still work.
+/// Stands in when the speech models cannot be loaded: capture, spool, meters and permissions keep working.
 final class NullTranscriber: Transcriber {
     let engine = "none"
     let backlogMS = 0
     func begin(policy: STTPolicy, resumeFrom: [UInt8: UInt64], emit: @escaping (TranscriptEvent) -> Void) throws {}
     func feed(_ frame: AudioFrame) {}
     func finish() {}
+    func shutdown() {}
+    func transcribeFile(_ url: URL, stream: UInt8, policy: STTPolicy,
+                        emit: @escaping (TranscriptEvent) -> Void) throws -> (segments: Int, durationSamples: Int) {
+        throw ModelLoadError("no speech recognition available")
+    }
 }
 
 /// Exit codes of ARCHITECTURE 5.7.
@@ -26,14 +32,16 @@ final class Agent {
 
     private let options: AgentOptions
     private let transport = StdioTransport()
-    private let makeTranscriber: () -> Transcriber
+    private let transcriber: Transcriber
+    private let defaults: ModelDefaults
     private var session: CaptureSession?
     private var heartbeat: DispatchSourceTimer?
     private var input: TestInput?
 
-    init(options: AgentOptions, makeTranscriber: @escaping () -> Transcriber) {
+    init(options: AgentOptions, transcriber: Transcriber) {
         self.options = options
-        self.makeTranscriber = makeTranscriber
+        self.transcriber = transcriber
+        self.defaults = ModelDefaults(model: options.model, vadModel: options.vadModel)
     }
 
     func run() -> Int32 {
@@ -75,6 +83,7 @@ final class Agent {
         case "session.start": startSession(message)
         case "session.stop": stopSession(message)
         case "audio.ack": acknowledge(message)
+        case "transcribe.file": importFile(message)
         case "permission.status", "permission.request": answerPermissions(message)
         default:
             // Unknown requests are answered, unknown events are ignored (ARCHITECTURE 5.1).
@@ -86,7 +95,7 @@ final class Agent {
 
     private func startSession(_ message: ControlMessage) {
         let request: SessionRequest
-        do { request = try SessionRequest(body: message.body) } catch {
+        do { request = try SessionRequest(body: message.body, defaults: defaults) } catch {
             transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "\(error)")))
             return
         }
@@ -98,7 +107,7 @@ final class Agent {
         do {
             let source = try loadInput()
             let started = CaptureSession(request: request, transport: transport, input: source,
-                                         transcriber: makeTranscriber(), speed: options.testSpeed,
+                                         transcriber: transcriber, speed: options.testSpeed,
                                          simulateSilentSystem: options.simulateSilentSystem)
             transport.send(.response(to: message, type: "session.started", [
                 "session_id": request.id, "t0_wall_ms": Int64(Date().timeIntervalSince1970 * 1000),
@@ -129,6 +138,30 @@ final class Agent {
         session?.acknowledge(stream: stream, seq: UInt32(seq), window: window)
     }
 
+    /// Offline import: runs beside any live session, answers with the finals then `transcribe.file.done`.
+    private func importFile(_ message: ControlMessage) {
+        guard let jobId = message.body["job_id"] as? String, let path = message.body["path"] as? String,
+              let stream = (message.body["stream"] as? String).flatMap(StreamID.index(named:)) else { return }
+        let policy: STTPolicy
+        do { policy = defaults.applied(to: try STTPolicy.parse(message.body["stt"] as? [String: Any])) } catch {
+            transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "\(error)", jobId)))
+            return
+        }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            do {
+                let result = try transcriber.transcribeFile(URL(fileURLWithPath: path), stream: stream, policy: policy) { event in
+                    if case .final = event { self.transport.send(TranscriptMessage.message(for: event, sessionId: jobId)) }
+                }
+                transport.send(.response(to: message, type: "transcribe.file.done", [
+                    "job_id": jobId, "segments": result.segments, "duration_samples": result.durationSamples]))
+            } catch let error as ModelLoadError {
+                transport.send(.response(to: message, type: "error", errorBody("model_load_failed", "warn", "\(error)", jobId)))
+            } catch {
+                transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "\(error)", jobId)))
+            }
+        }
+    }
+
     private func answerPermissions(_ message: ControlMessage) {
         guard message.id != nil else { return }
         transport.send(.response(to: message, type: message.type, permissionStates()))
@@ -155,6 +188,7 @@ final class Agent {
         heartbeat?.cancel()
         _ = session?.stop()
         session = nil
+        transcriber.shutdown()
     }
 
     private func startHeartbeat() {
@@ -172,15 +206,14 @@ final class Agent {
 
     private func helloBody() -> [String: Any] {
         let os = ProcessInfo.processInfo.operatingSystemVersion
-        let transcriber = makeTranscriber()
         return [
             "protocol": ["min": 1, "max": 1],
             "agent": ["name": Self.name, "version": Self.version, "os": "macos",
                       "os_version": "\(os.majorVersion).\(os.minorVersion)", "arch": Self.architecture],
             "capabilities": [
                 "capture": ["streams": ["mic", "system"], "aec": false, "device_events": false],
-                "stt": ["engine": transcriber.engine, "partials": transcriber.engine != "none",
-                        "transcribe_file": transcriber.engine != "none"],
+                "stt": ["engine": transcriber.engine, "engine_version": "1.9.5", "partials": true,
+                        "accel": "metal", "transcribe_file": true],
                 "permissions": ["microphone", "system_audio"],
                 "test_input": true,
             ] as [String: Any],

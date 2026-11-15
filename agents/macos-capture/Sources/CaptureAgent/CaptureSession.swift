@@ -15,7 +15,7 @@ struct SessionRequest {
         let sttDoneUntilSample: [UInt64]
     }
 
-    init(body: [String: Any]) throws {
+    init(body: [String: Any], defaults: ModelDefaults = ModelDefaults()) throws {
         guard let id = body["session_id"] as? String, let spool = body["spool_dir"] as? String else {
             throw ProtocolValidationError(reason: "session.start needs session_id and spool_dir")
         }
@@ -23,7 +23,7 @@ struct SessionRequest {
         self.id = id
         self.spoolDir = URL(fileURLWithPath: spool)
         self.window = max(1, WireCodec.integer(audio["window"]) ?? 50)
-        self.policy = try STTPolicy.parse(body["stt"] as? [String: Any])
+        self.policy = defaults.applied(to: try STTPolicy.parse(body["stt"] as? [String: Any]))
         if let resume = body["resume"] as? [String: Any] {
             func perStream<T>(_ key: String, _ transform: (Int) -> T) -> [T] {
                 let values = resume[key] as? [String: Any] ?? [:]
@@ -49,7 +49,7 @@ final class CaptureSession {
     private let input: TestInput
     private let window: DeliveryWindow
     private let spool: SpoolStore
-    private let transcriber: Transcriber
+    private var transcriber: Transcriber
     private let speed: Double
     private let simulateSilentSystem: Bool
     private let queue = DispatchQueue(label: "capture.session", qos: .userInteractive)
@@ -89,7 +89,15 @@ final class CaptureSession {
             }
             cursor = liveStart.min() ?? 0
         }
-        try transcriber.begin(policy: request.policy, resumeFrom: resumeFrom) { [weak self] event in self?.emit(event) }
+        do {
+            try transcriber.begin(policy: request.policy, resumeFrom: resumeFrom) { [weak self] event in self?.emit(event) }
+        } catch {
+            // Capture, the spool and the meters stay useful without text; the core decides what to tell the user.
+            log("speech recognition unavailable: \(error)")
+            transport.send(.event("error", ["code": "model_load_failed", "severity": "warn", "retryable": false,
+                                            "session_id": request.id, "message": "\(error)"]))
+            transcriber = NullTranscriber()
+        }
         try catchUpTranscription(from: resumeFrom)
         startTimer()
     }
@@ -209,20 +217,39 @@ final class CaptureSession {
     }
 
     private func emit(_ event: TranscriptEvent) {
+        transport.send(TranscriptMessage.message(for: event, sessionId: request.id))
+    }
+}
+
+/// Model paths given on the command line, used when `session.start` or `transcribe.file` carry none.
+struct ModelDefaults {
+    var model: URL?
+    var vadModel: URL?
+
+    func applied(to policy: STTPolicy) -> STTPolicy {
+        var result = policy
+        if result.modelPath == nil { result.modelPath = model?.path }
+        if result.vadModelPath == nil { result.vadModelPath = vadModel?.path }
+        return result
+    }
+}
+
+enum TranscriptMessage {
+    static func message(for event: TranscriptEvent, sessionId: String) -> ControlMessage {
         switch event {
         case let .partial(stream, seg, revision, start, text):
-            transport.send(.event("stt.partial", ["session_id": request.id, "stream": StreamID.name(stream), "seg": seg,
-                                                  "rev": revision, "start_sample": start, "end_sample": NSNull(), "text": text]))
+            return .event("stt.partial", ["session_id": sessionId, "stream": StreamID.name(stream), "seg": seg,
+                                          "rev": revision, "start_sample": start, "end_sample": NSNull(), "text": text])
         case let .vad(stream, seg, start, end, closed):
-            transport.send(.event("vad.segment", ["session_id": request.id, "stream": StreamID.name(stream), "seg": seg,
-                                                  "start_sample": start, "end_sample": end.map { $0 as Any } ?? NSNull(),
-                                                  "state": closed ? "closed" : "open"]))
+            return .event("vad.segment", ["session_id": sessionId, "stream": StreamID.name(stream), "seg": seg,
+                                          "start_sample": start, "end_sample": end.map { $0 as Any } ?? NSNull(),
+                                          "state": closed ? "closed" : "open"])
         case let .final(stream, seg, start, end, text, language, logprob, model):
-            transport.send(.event("stt.final", ["session_id": request.id, "stream": StreamID.name(stream), "seg": seg,
-                                                "start_sample": start, "end_sample": end, "text": text,
-                                                "lang": language.map { $0 as Any } ?? NSNull(),
-                                                "avg_logprob": logprob.map { $0 as Any } ?? NSNull(),
-                                                "model": model, "words": NSNull()]))
+            return .event("stt.final", ["session_id": sessionId, "stream": StreamID.name(stream), "seg": seg,
+                                        "start_sample": start, "end_sample": end, "text": text,
+                                        "lang": language.map { $0 as Any } ?? NSNull(),
+                                        "avg_logprob": logprob.map { $0 as Any } ?? NSNull(),
+                                        "model": model, "words": NSNull()])
         }
     }
 }

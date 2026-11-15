@@ -61,3 +61,4 @@ fixtures/**/*.aiff
 fixtures/**/*.caf
 *.p12
 *.keychain-db
+.whisper/
