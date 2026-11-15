@@ -18,12 +18,21 @@ public final class WhisperTranscriber: Transcriber {
 
     public func begin(policy: STTPolicy, resumeFrom: [UInt8: UInt64], emit: @escaping (TranscriptEvent) -> Void) throws {
         guard let modelPath = policy.modelPath else { throw ModelLoadError("session.start carries no stt.model_path") }
-        try queue.sync {
-            let loaded = try loadModel(at: modelPath)
-            detectedLanguage = nil
-            for stream in [StreamID.mic, StreamID.system] {
-                chunkers[stream] = try makeChunker(stream: stream, policy: policy, model: loaded, startAt: resumeFrom[stream] ?? 0,
-                                                   live: true, emit: emit)
+        guard FileManager.default.isReadableFile(atPath: modelPath) else {
+            throw ModelLoadError("speech model not readable at \(modelPath)")
+        }
+        // Loading takes about a second with Metal: capture must not wait for it, so the load is the first job on the
+        // STT queue and the frames fed meanwhile simply queue behind it.
+        queue.async { [self] in
+            do {
+                let loaded = try loadModel(at: modelPath)
+                detectedLanguage = nil
+                for stream in [StreamID.mic, StreamID.system] {
+                    chunkers[stream] = try makeChunker(stream: stream, policy: policy, model: loaded,
+                                                       startAt: resumeFrom[stream] ?? 0, live: true, emit: emit)
+                }
+            } catch {
+                FileHandle.standardError.write(Data("speech recognition unavailable: \(error)\n".utf8))
             }
         }
     }
