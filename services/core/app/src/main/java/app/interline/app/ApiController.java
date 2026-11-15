@@ -79,7 +79,9 @@ class ApiController {
     @GetMapping("/meetings/{id}/stats")
     Map<String, Object> stats(@PathVariable("id") String id) {
         if (ingest.store().findMeeting(id).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown meeting");
-        return Map.of("sttLatencyMs", recording.sttLatencyStats(id));
+        var latency = recording.sttLatencyStats(id);
+        Long t0 = recording.sessionT0WallMs(id);
+        return t0 == null ? Map.of("sttLatencyMs", latency) : Map.of("sttLatencyMs", latency, "t0WallMs", t0);
     }
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

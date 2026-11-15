@@ -57,6 +57,7 @@ public class RecordingService implements CaptureListener {
     private final Path spoolRoot;
     private final OrphanRecovery recovery;
     private final Map<String, Map<StreamKind, List<Long>>> sttLatencies = new ConcurrentHashMap<>();
+    private final Map<String, Long> sessionT0 = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "recording-timer");
         thread.setDaemon(true);
@@ -244,6 +245,7 @@ public class RecordingService implements CaptureListener {
     private void recordLatency(FinalSegment segment) {
         if (active.t0WallMs < 0) return;
         long latency = clock.millis() - (active.t0WallMs + segment.endSample() / SAMPLES_PER_MS);
+        sessionT0.putIfAbsent(active.id, active.t0WallMs);
         sttLatencies.computeIfAbsent(active.id, id -> new ConcurrentHashMap<>())
                 .computeIfAbsent(segment.stream(), stream -> new CopyOnWriteArrayList<>()).add(latency);
         LOG.log(System.Logger.Level.INFO, "stt_latency_ms={0} stream={1}", latency, segment.stream().wireName());
@@ -260,6 +262,11 @@ public class RecordingService implements CaptureListener {
                     "p95_ms", percentile(sorted, 95)));
         }
         return stats;
+    }
+
+    /** Wall clock (epoch ms) the agent reported for sample zero, so a client can recompute a latency itself. */
+    public Long sessionT0WallMs(String meetingId) {
+        return sessionT0.get(meetingId);
     }
 
     private static long percentile(List<Long> sorted, int percent) {
