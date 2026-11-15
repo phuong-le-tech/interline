@@ -210,7 +210,7 @@ public enum WireCodec {
     }
 
     /// JSON integers only: a Bool or a fractional number is not an integer.
-    static func integer(_ value: Any?) -> Int? {
+    public static func integer(_ value: Any?) -> Int? {
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
         let double = number.doubleValue
         guard double == double.rounded(), abs(double) < 9.0e15 else { return nil }

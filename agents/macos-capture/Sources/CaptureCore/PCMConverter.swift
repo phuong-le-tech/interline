@@ -68,7 +68,7 @@ public final class PCMConverter {
     private static func sinc(_ x: Double) -> Double { x == 0 ? 1 : sin(Double.pi * x) / (Double.pi * x) }
 
     private static func quantise(_ value: Float) -> Int16 {
-        Int16(max(-32768, min(32767, (value * 32767).rounded())))
+        Int16(max(-32768, min(32767, (value * 32768).rounded())))
     }
 
     private static func gcd(_ a: Int, _ b: Int) -> Int { b == 0 ? a : gcd(b, a % b) }

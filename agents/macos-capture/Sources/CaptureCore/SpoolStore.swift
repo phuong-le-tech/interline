@@ -38,18 +38,17 @@ public final class SpoolStore {
         try lock.withLock { try appendLocked(frame) }
     }
 
-    /// First frame of a resumed session: always a new file, flagged when the timeline does not continue.
+    /// First frame of a resumed session: always a new file, and always flagged. Whether the timeline really jumps
+    /// is for the reader of `first_sample` to see; the flag only says "do not assume continuity with the replay".
     public func resumeLive(_ frame: AudioFrame) throws -> AudioFrame {
         try lock.withLock {
             guard !resumed.contains(frame.stream) else { try appendLocked(frame); return frame }
             resumed.insert(frame.stream)
-            let history = (try? Self.list(directory: directory, stream: frame.stream)) ?? []
-            let contiguous = history.last.map { segment in
-                let physical = Self.physicalFrames(of: segment.path)
-                return segment.firstSeq + UInt32(physical) == frame.seq
-                    && segment.firstSample + UInt64(physical * AudioConstants.frameSamples) == frame.firstSample
-            } ?? false
-            let flagged = contiguous ? frame : frame.with(flags: frame.flags | FrameFlags.discontinuityBefore)
+            let flagged = frame.with(flags: frame.flags | FrameFlags.discontinuityBefore)
+            if let open = current[frame.stream] {
+                try finish(open)
+                current[frame.stream] = nil
+            }
             try openNewFile(for: flagged)
             try appendLocked(flagged)
             return flagged
