@@ -67,7 +67,10 @@ public final class M1NativeProbe implements AutoCloseable {
             int exit = child.waitFor();
             write(log, Map.of("type", "exit", "pid", child.pid(), "nano", System.nanoTime(), "code", exit));
             input.interrupt();
-            System.exit(exit);
+            // A JVM with a thread blocked on stdin takes ~2 s to exit on macOS and holds the stdout pipe open that
+            // long, so the supervisor would see the dead agent late. SIGKILL ourselves instead of exiting.
+            new ProcessBuilder("kill", "-9", Long.toString(tee)).start().waitFor();
+            Runtime.getRuntime().halt(exit);
         } finally { child.destroyForcibly(); child.waitFor(2, TimeUnit.SECONDS); }
     }
 
