@@ -14,6 +14,9 @@ let package = Package(
         .target(name: "CaptureCore"),
         .target(name: "CaptureDevices", dependencies: ["CaptureCore"]),
         .executableTarget(name: "CaptureAgent", dependencies: ["CaptureCore", "CaptureDevices"]),
-        .executableTarget(name: "CaptureSelfTest", dependencies: ["CaptureCore", "CaptureDevices"])
-    ]
+        .executableTarget(name: "CaptureSelfTest", dependencies: ["CaptureCore", "CaptureDevices"],
+                          swiftSettings: [.swiftLanguageMode(.v6)])
+    ],
+    // Language mode 5: the agent shares plain mutable state across its capture and STT threads under locks.
+    swiftLanguageModes: [.v5]
 )
