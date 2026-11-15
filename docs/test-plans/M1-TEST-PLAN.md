@@ -1,6 +1,6 @@
 # M1 test plan
 
-AC numbering follows the card. Paths: A=`services/core/app/src/test/java/app/interline/app/M1Test.java`; J=`services/core/adapter-agent-protocol/src/test/java/app/interline/agent/M1GoldenTest.java`; C=`services/core/agent-conformance/src/test/java/app/interline/conformance/M1Test.java`; S=`agents/macos-capture/Sources/CaptureSelfTest/main.swift`; U=`apps/desktop/e2e/m1.spec.ts`; R=`scripts/m1/`.
+Paths: A=`services/core/app/src/test/java/app/interline/app/M1Test.java`; J=`services/core/adapter-agent-protocol/src/test/java/app/interline/agent/M1GoldenTest.java`; C=`services/core/agent-conformance/src/test/java/app/interline/conformance/M1Test.java`; S=`agents/macos-capture/Sources/CaptureSelfTest/main.swift`; U=`apps/desktop/e2e/m1.spec.ts`; R=`scripts/m1/`.
 
 Generated/temp-only fixtures: F=48kHz-stereo-sine/silence; V=six-FR/EN-`say`/`afconvert`-utterances; D=SQLite/spool; H=HTTP-bytes. Real SQLite/Flyway/processes/codecs/SSE; external-HTTP/clock mocks only. Headless=MockAgent/Swift-`--test-input`,no-TCC. Predownload models.
 
