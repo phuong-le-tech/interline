@@ -311,11 +311,16 @@ public class RecordingService implements CaptureListener {
     }
 
     private ResumeState resumeState(Meeting meeting) {
-        Map<StreamKind, Long> acked = new EnumMap<>(meeting.lastAcked);
+        Map<StreamKind, Long> acked = new EnumMap<>(StreamKind.class);
         Map<StreamKind, Long> next = new EnumMap<>(StreamKind.class);
         Map<StreamKind, Long> sttDone = new EnumMap<>(StreamKind.class);
         for (StreamKind stream : StreamKind.values()) {
-            next.put(stream, acked.get(stream) + 1);
+            // The dead agent cannot receive acks any more, so the durable watermark, not the last ack that
+            // reached it, is where its replacement must resume.
+            long durable = Math.max(meeting.lastAcked.get(stream), ingest.watermark(meeting.id, stream));
+            meeting.lastAcked.put(stream, durable);
+            acked.put(stream, durable);
+            next.put(stream, durable + 1);
             sttDone.put(stream, store.sttDoneUntil(meeting.id, stream));
         }
         List<String> previous = new ArrayList<>(meeting.spoolDirs);

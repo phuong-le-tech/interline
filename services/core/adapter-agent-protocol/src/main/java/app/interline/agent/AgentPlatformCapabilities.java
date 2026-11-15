@@ -153,7 +153,10 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         } finally {
             source.ready = false;
             flush(batch);
-            if (!terminated) listener.agentLost(reason);
+            if (!terminated) {
+                supervisor.outputClosed(source.process);
+                listener.agentLost(reason);
+            }
         }
     }
 
