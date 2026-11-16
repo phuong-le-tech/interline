@@ -52,6 +52,8 @@ def catalog(path):
         if parsed.scheme != "https" or parsed.netloc != "huggingface.co" or \
            not re.fullmatch(r"/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", parsed.path):
             raise AssertionError(f"AC8_catalog_{identifier}: URL must pin a full HF commit")
+        require(re.fullmatch(r"[0-9a-f]{64}", row["sha256"]), f"AC8_catalog_{identifier}: full SHA-256 required")
+        require(isinstance(row["sizeBytes"], int) and row["sizeBytes"] > 0, f"AC8_catalog_{identifier}: positive byte size required")
         safe_url = urllib.parse.urlunparse(("https", "huggingface.co", parsed.path, "", "", ""))
         request = urllib.request.Request(safe_url, method="HEAD")
         # The original response carries x-linked-*; do not follow a redirect to a signed blob.
@@ -66,8 +68,6 @@ def catalog(path):
         with response:
             digest = response.headers.get("x-linked-etag", "").strip('"')
             size = response.headers.get("x-linked-size", "")
-            require(re.fullmatch(r"[0-9a-f]{64}", row["sha256"]), f"AC8_catalog_{identifier}: full SHA-256 required")
-            require(isinstance(row["sizeBytes"], int) and row["sizeBytes"] > 0, f"AC8_catalog_{identifier}: positive byte size required")
             require(digest == row["sha256"], f"AC8_catalog_{identifier}: missing or mismatched x-linked-etag: {digest}")
             require(size == str(row["sizeBytes"]), f"AC8_catalog_{identifier}: missing or mismatched x-linked-size: {size}")
             print(f"PASS AC8_catalog_{identifier} commit_url={url} sha256={digest} size={size}")
