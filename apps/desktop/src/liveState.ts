@@ -22,7 +22,7 @@ export type BarState =
 export type PermissionKind = 'microphone' | 'system_audio';
 
 export const SYSTEM_AUDIO_SETTINGS_URI =
-  'x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture';
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 export const MICROPHONE_SETTINGS_URI =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone';
 /** The only URL scheme the "Open System Settings" action may open. */

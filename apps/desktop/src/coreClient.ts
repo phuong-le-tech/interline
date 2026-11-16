@@ -76,8 +76,8 @@ export class CoreClient {
   private async json<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(this.url(path), { ...init, headers: { ...this.headers(), ...init?.headers } });
     if (!response.ok) {
-      const problem = (await response.json().catch(() => ({}))) as { detail?: string };
-      throw new Error(problem.detail ?? `HTTP ${response.status}`);
+      const problem = (await response.json().catch(() => ({}))) as { detail?: string; code?: string };
+      throw Object.assign(new Error(problem.detail ?? `HTTP ${response.status}`), { code: problem.code });
     }
     return (await response.json()) as T;
   }

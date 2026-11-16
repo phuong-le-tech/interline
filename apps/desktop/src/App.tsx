@@ -16,6 +16,7 @@ import { PermissionBanner } from './PermissionBanner';
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
 const PERMISSION_MISSING = 'permission_missing';
+const MODEL_MISSING = 'model_missing';
 const SILENT_LEVELS: Levels = { mic: 0, system: 0 };
 
 type Banners = Partial<Record<PermissionKind, string>>;
@@ -116,6 +117,8 @@ export function App() {
     } catch (e) {
       setState('failed');
       setError(e instanceof Error ? e.message : String(e));
+      // The only way out of a missing model is the Models screen.
+      if ((e as { code?: string }).code === MODEL_MISSING) setView('models');
     }
   };
 
