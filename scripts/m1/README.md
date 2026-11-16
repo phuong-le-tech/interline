@@ -69,3 +69,13 @@ not added by the test-writer: its absence is the current AC16 red assertion.
 AC13/AC14/AC15/AC17 remain implementation evidence or human gates from the plan,
 not fabricated test-writer results. No audio, models, credentials or signing
 material are committed.
+
+## Short-utterance and live-display checks
+
+```sh
+python3 scripts/fixtures/gen-short-utterances.py fixtures/speech/short-system.wav
+python3 scripts/m1/short-utterances-check.py ~/.interline-models      # real core + Swift agent + small, exits 1 on a dropped utterance
+INTERLINE_E2E_MODELS=~/.interline-models pnpm --dir apps/desktop exec playwright test native-live
+```
+
+They back spike (c) and the transcript panel without a human. The second needs the built agent and the jar.

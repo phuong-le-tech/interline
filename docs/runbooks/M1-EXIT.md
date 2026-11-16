@@ -37,22 +37,33 @@ writes `~/Library/Application Support/app.interline.dev/m1-gate/results.json`. K
 | Step | Permission | System Settings pane | Parent process of the agent | What you do | Success within 5 s | What the agent does with the answer |
 |---|---|---|---|---|---|---|
 | (a)+(b) attribution and tap | Microphone, System Audio Recording | Privacy & Security > Microphone; Privacy & Security > Screen & System Audio Recording > System Audio Recording Only | `Interline.app` > JVM (core) > `interline-capture-macos` | Click Record, allow both dialogs, speak, play audio elsewhere | Dialogs name Interline (not Java, not Terminal); the Me and Them meters move; Them text appears | Granted: frames flow. If the dialog names the wrong process, spike (a) FAILED and the Unix-socket fallback (ARCHITECTURE 5.1, shell-launched agent) is implemented in this PR |
-| (c) echo cancellation | Microphone | same | same | Record twice (voice processing off, then on), run `say "the quick brown fox jumps over the lazy dog"` on the speakers while silent | With processing on, the sentence is NOT a visible Me row; with it off it is (or is suppressed by the core's text dedup) | The result decides whether `--voice-processing=on` becomes the default and `capture.aec:true` lowers the dedup threshold to 85 % (ADR-009) |
+| (c) echo cancellation | Microphone | same | same | Record twice (voice processing off, then on), stay silent: the script speaks a French sentence 4 times (about 15 s) on the speakers | The system stream has rows (checked by the script); with processing on, the sentence is NOT a visible Me row; with it off it is (or is suppressed by the core's text dedup) | The result decides whether `--voice-processing=on` becomes the default and `capture.aec:true` lowers the dedup threshold to 85 % (ADR-009) |
 | (d) rebuild | Microphone, System Audio Recording | same | same | The script rebuilds with a code change signed with the same identity, then ad-hoc; Record and play audio each time | Same identity: no new dialog and Them meter moves. Ad-hoc: expect a dialog and possibly a silent stream | Fills the ADR-004 matrix rows (re-prompt yes/no, stream silent yes/no) |
 | (e) denial | System Audio Recording | Privacy & Security > Screen & System Audio Recording | same | The script runs `tccutil reset` for both services and both bundle ids (exit codes are recorded: they verify the service names), you Deny system audio, play audio | The red banner "I can't hear the other participants" appears in under 10 s | The agent reports `permission.denied` (silent stream detector); the UI shows the banner with an "Open System Settings" link |
 
-### Short re-run (after the first sitting)
+### Speech language: French
 
-The first sitting (2026-11-15) ran with no speech model, so only spike (d) is valid (ADR-004). The re-run covers
-(a), (b), (c) and (e) in about 20 minutes and keeps the (d) answers:
+The core sends `language: "fr"` in `session.start`, so speech is decoded as French whatever is said. Measured
+headlessly: the English sentence "the quick brown fox jumps over the lazy dog" comes out as "Le petit
+faute-brouhonne-faux se trompe sur le pétier." This is consistent with the second sitting's "text does not match"
+answers, which were therefore not a display defect. Speak French and play French audio. The
+transcript panel is covered without a human by `apps/desktop/e2e/native-live.spec.ts` (real core, real agent,
+real whisper), so if a row is in the database but not in the window, that is a packaged-app problem to report.
+
+### Per-spike runs
+
+Each spike runs on its own and a measurement that cannot be made is written to `results.json` as
+`<spike>_inconclusive`; it never stops the others and is never read as a pass. The answers of the spikes that are
+not run are kept.
 
 ```sh
-scripts/m1/human-gate.sh --rerun
+scripts/m1/human-gate.sh --skip-build --only c --only e   # about 10 min, the app is already built and signed
+scripts/m1/human-gate.sh --rerun                          # (a) (b) (c) (e), keeps the (d) answers
 ```
 
-It downloads `small` and the Silero VAD into the app data directory first (sha256 verified), refuses to ask (b) or
-(c) when the database holds no transcript rows for the stream concerned (it offers a retry instead), and starts
-the (e) clock at the Deny click, not at the Record click.
+Both download `small` and the Silero VAD into the app data directory first (sha256 verified, nothing happens when
+they are there), refuse to ask a transcript question when the database holds no rows for the stream concerned,
+and start the (e) clock at the Deny click, not at the Record click.
 
 When you are done, tell the agent runner (or comment on card t_1da2fafc) "gate done". It then reads
 `results.json`, writes the ADR-004 "Spike results" and finishes ADR-009; if (a) failed it implements the

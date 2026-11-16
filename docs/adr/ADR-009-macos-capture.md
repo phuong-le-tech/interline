@@ -18,20 +18,23 @@ A tap bound to the default output device stays on the old device after a switch,
 `kAudioHardwarePropertyDefaultOutputDevice` and sends `device.changed`. A denied tap returns zeros instead of an
 error, hence the silent-stream detector (5 s of exact zeros while `kAudioProcessPropertyIsRunningOutput` is true for
 another process) emitting `permission.denied{detection:"silent_stream"}`.
-**PENDING (spike a, b, e), one re-run needed:** the first sitting could not answer them (ADR-004 "Spike results").
-What is known: with the app signed by the stable identity both level meters moved, so the tap and the microphone
-deliver audio when the agent is a grandchild (shell > JVM > agent) and the grants are held by
-`app.interline.desktop`. Not yet confirmed: the app name shown in the dialogs, and the time from a denial to the
-banner (the 17 s measured included answering the dialogs). The Unix-socket fallback is implemented only if the
-re-run shows the dialog naming the wrong process.
+**Measured (second sitting, ADR-004 "Spike results"):** with the app signed by the stable identity, the tap and
+the microphone deliver audio when the agent is a grandchild (Interline.app > JVM > agent): both meters moved and
+real transcript rows exist for both streams. The grants appear in System Settings under `interline.app`, so the
+attribution holds; the dialog texts were not recorded, so that evidence is the Settings entry only. The Unix-socket
+fallback is not built because spike (a) did not fail.
+**PENDING (spike e), one short human run:** the time from a denial to the banner. The 17 s measured at the first
+sitting included answering the dialogs. Short system utterances are not dropped by the pipeline (headless check),
+but a live system stream that stays empty for a 3 s utterance is unexplained; spike (c) records it again.
 
 ### 2. Microphone and echo cancellation
 
 `AVAudioEngine` input node. Apple voice processing (acoustic echo cancellation) is behind `--voice-processing`,
 **off by default**. The agent advertises `capture.aec` only when it is on, and the core then raises the echo
 suppression threshold from 70 % to 85 % of token overlap, because a real canceller already removed most echo.
-**PENDING (spike c), one re-run needed:** the first sitting had no speech model, so no Me row could exist and
-the answers are void. **Decision for now: voice processing stays off by default and `capture.aec` stays false.**
+**PENDING (spike c), one short human run:** the first sitting had no speech model (answers void) and the second
+aborted before the measurement (no system rows after one 3 s English sentence; the core transcribes as French).
+**Decision for now: voice processing stays off by default and `capture.aec` stays false.**
 That is "unmeasured", not "refuted": nothing here claims that echo cancellation works. If the re-run shows that
 voice processing removes the echo without damaging the voice, the default flips to on; if it ducks other audio
 or hurts the Them stream, it stays off and the core's text dedup (ARCHITECTURE 9.2) is the only mitigation.

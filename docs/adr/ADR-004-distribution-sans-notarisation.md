@@ -121,3 +121,15 @@ Not valid and not used (the first sitting ran with no speech model installed, so
 The `tccutil reset` service names (`Microphone`, `AudioCapture`) accepted by the OS: both services returned exit 0
 for `app.interline.desktop` after a grant.
 
+**Second sitting (2026-11-16, `human-gate.sh --rerun`): (a) holds on one piece of evidence, (b) holds at the data
+level, (c) and (e) are still open.**
+
+| Spike | What was measured | Reading |
+|---|---|---|
+| (a) attribution | The System Settings entry for the permissions is named `interline.app`. The two dialog-name fields were left empty. `tccutil reset` returns 0 for `app.interline.desktop` and 64 (bundle id not registered) for `app.interline.capture` | The grants are held by `Interline.app`, not by Java, the Terminal or the agent binary. The dialog texts themselves are not recorded: only the Settings entry backs this. Spike (a) is not failed, so no Unix-socket fallback is built |
+| (b) tap | Transcript rows for both streams in the database: Me 2, Them 1, with real text; both meters moved | Real device capture plus speech recognition works end to end on this Mac. "Text appeared: no" has an explained cause and no display defect was found: the core sends `language: "fr"` in `session.start` and English speech is decoded as French nonsense (reproduced headlessly), and the native Playwright spec shows the same rows in the window |
+| (c) echo | `c_off_rows_system = 0` after about 3 s of English `say`, then the sitting stopped | Not measured. Short utterances are not dropped by the pipeline (3 utterances of 3.2 s on the system channel give 3 finals, `scripts/m1/short-utterances-check.py`); the live cause of the empty system stream is unknown. The sitting is redesigned: French sentence, 15 s of speech, rows checked before the question |
+| (e) denial | Never ran: (c) aborted the whole sitting | Open. The script now runs each spike on its own and records an unmeasurable one as inconclusive |
+
+Open human gates from this sitting: (c) and (e), run with `scripts/m1/human-gate.sh --skip-build --only c --only e`.
+

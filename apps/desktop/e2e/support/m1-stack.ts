@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -13,6 +13,8 @@ import { startRecordingStack } from './recording-stack';
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repository = resolve(desktop, '../..');
 const origin = 'http://127.0.0.1:5173';
+const NATIVE_AGENT = resolve(repository, 'agents/macos-capture/.build/release/interline-capture-macos');
+const NATIVE_MODEL_FILES = ['ggml-small.bin', 'ggml-silero-v6.2.0.bin'];
 const token = Buffer.alloc(32, 0x12).toString('base64url');
 
 type Process = {
@@ -51,8 +53,10 @@ async function stopProcess(managed: Process) {
 }
 
 /** The existing M0 helper stays untouched. Only fault/configuration runs need this launcher. */
-export async function startM1Stack(options: { agentArgs?: string[]; modelDownload?: boolean } = {}) {
-  if (!options.agentArgs && !options.modelDownload) return startRecordingStack();
+export type NativeAgent = { input: string; modelsDir: string };
+
+export async function startM1Stack(options: { agentArgs?: string[]; modelDownload?: boolean; native?: NativeAgent } = {}) {
+  if (!options.agentArgs && !options.modelDownload && !options.native) return startRecordingStack();
   const scratch = await mkdtemp(join(tmpdir(), 'interline-m1-'));
   const children: Process[] = [];
   const fixtureRequests: string[] = [];
@@ -86,6 +90,11 @@ export async function startM1Stack(options: { agentArgs?: string[]; modelDownloa
     const logs = join(scratch, 'logs');
     await Promise.all([mkdir(data), mkdir(logs)]);
     const jvmArgs: string[] = [];
+    if (options.native) {
+      // Core installs nothing: it finds the speech models where the packaged app keeps them, in <data>/models.
+      await mkdir(join(data, 'models'));
+      for (const file of NATIVE_MODEL_FILES) await symlink(join(options.native.modelsDir, file), join(data, 'models', file));
+    }
     if (options.modelDownload) {
       await new Promise<void>((done) => modelServer.listen(0, '127.0.0.1', done));
       const address = modelServer.address();
@@ -101,8 +110,9 @@ export async function startM1Stack(options: { agentArgs?: string[]; modelDownloa
     const core = launch(process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin/java') : 'java', [
       ...jvmArgs, '-jar', join(repository, 'services/core/app/target/interline-core.jar'),
       `--data-dir=${data}`, `--log-dir=${logs}`,
-      `--agent=${join(repository, 'services/core/mock-agent/bin/mock-agent')}`,
-      ...(options.agentArgs ?? ['--speed=20']).map((arg) => `--agent-arg=${arg}`),
+      `--agent=${options.native ? NATIVE_AGENT : join(repository, 'services/core/mock-agent/bin/mock-agent')}`,
+      ...(options.native ? [`--test-input=${options.native.input}`, '--test-speed=1'] : options.agentArgs ?? ['--speed=20'])
+        .map((arg) => `--agent-arg=${arg}`),
       '--parent=stdio', `--allow-origin=${origin}`,
     ]);
     children.push(core);
