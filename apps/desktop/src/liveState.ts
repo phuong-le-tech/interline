@@ -74,6 +74,23 @@ export function applyFinal(rows: TranscriptRow[], event: SegmentEvent): Transcri
   return rows.some((row) => row.key === key) ? rows.map((row) => (row.key === key ? settled : row)) : [...rows, settled];
 }
 
+/** What the live panel holds: the visible rows, plus the keys the core already suppressed. */
+export type LiveTranscript = { rows: TranscriptRow[]; suppressed: string[] };
+
+export const EMPTY_TRANSCRIPT: LiveTranscript = { rows: [], suppressed: [] };
+
+/**
+ * Apply one transcript SSE event. `stt.partial` and `stt.final` settle their row, `transcript.suppressed` removes
+ * the row of that key and remembers it, so a later partial or final on the same key cannot bring it back. Any other
+ * event name leaves the state untouched.
+ */
+export function applyLiveEvent(state: LiveTranscript, name: string, data: unknown): LiveTranscript {
+  void state;
+  void name;
+  void data;
+  throw new Error('applyLiveEvent is not implemented');
+}
+
 export function isSettingsUri(uri: string): boolean {
   return uri.startsWith(SETTINGS_SCHEME);
 }
