@@ -131,5 +131,11 @@ level, (c) and (e) are still open.**
 | (c) echo | `c_off_rows_system = 0` after about 3 s of English `say`, then the sitting stopped | Not measured. Short utterances are not dropped by the pipeline (3 utterances of 3.2 s on the system channel give 3 finals, `scripts/m1/short-utterances-check.py`); the live cause of the empty system stream is unknown. The sitting is redesigned: French sentence, 15 s of speech, rows checked before the question |
 | (e) denial | Never ran: (c) aborted the whole sitting | Open. The script now runs each spike on its own and records an unmeasurable one as inconclusive |
 
-Open human gates from this sitting: (c) and (e), run with `scripts/m1/human-gate.sh --skip-build --only c --only e`.
+**Third sitting (2026-11-16, `--only c --only e`): (c) and (e) measured.**
+
+| Spike | What was measured | Reading |
+|---|---|---|
+| (e) denial | Banner 4.3 s after the Deny click, with the "Open System Settings" link, which opened Screen & System Audio Recording | Under the 10 s limit; the silent-stream detector works on real hardware |
+| (c) echo, voice processing off | 4 system rows, all with the sentence; 4 mirrored Me rows stored with `suppressed=1` | The text dedup at 70 % removes the echo without AEC |
+| (c) echo, voice processing on | 0 system rows, twice | The system stream dies; see ADR-009 section 2 |
 

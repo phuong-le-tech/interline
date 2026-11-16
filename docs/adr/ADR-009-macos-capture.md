@@ -1,8 +1,8 @@
 # ADR-009 - macOS capture: process tap, echo cancellation, whisper packaging, test input, compression
 
-Status: **Draft**, 2026-11-15. Written at the end of the M1 implementation. Sections marked **PENDING** wait for
-the human sitting (`docs/runbooks/M1-EXIT.md`, results in `results.json`); the code for them is written but no
-agent has observed a real permission prompt or real device audio.
+Status: **Draft**, 2026-11-16, until Phuong accepts it. Spikes (a) to (e) were run in three human sittings
+(`docs/runbooks/M1-EXIT.md`, results in `results.json`); the remaining open gates are the 30 min real call and
+the M1 8 GB / M2 / M3 benchmark rows.
 Related: ADR-002 (agent contract), ADR-003 (ports), ADR-004 (distribution and TCC), `docs/ARCHITECTURE.md` 5.8, 9, 14.
 
 ## Decisions
@@ -23,21 +23,42 @@ the microphone deliver audio when the agent is a grandchild (Interline.app > JVM
 real transcript rows exist for both streams. The grants appear in System Settings under `interline.app`, so the
 attribution holds; the dialog texts were not recorded, so that evidence is the Settings entry only. The Unix-socket
 fallback is not built because spike (a) did not fail.
-**PENDING (spike e), one short human run:** the time from a denial to the banner. The 17 s measured at the first
-sitting included answering the dialogs. Short system utterances are not dropped by the pipeline (headless check),
-but a live system stream that stays empty for a 3 s utterance is unexplained; spike (c) records it again.
+**Measured (third sitting, spike e):** with system audio denied and other audio playing, the red banner appeared
+4.3 s after the Deny click (limit 10 s) and its "Open System Settings" link opened Screen & System Audio
+Recording. The 17 s of the first sitting included answering the dialogs. Short system utterances are not dropped
+by the pipeline (headless check); the empty system stream of the second sitting stays unexplained, but the third
+sitting's four French sentences all reached the system stream.
 
 ### 2. Microphone and echo cancellation
 
 `AVAudioEngine` input node. Apple voice processing (acoustic echo cancellation) is behind `--voice-processing`,
 **off by default**. The agent advertises `capture.aec` only when it is on, and the core then raises the echo
 suppression threshold from 70 % to 85 % of token overlap, because a real canceller already removed most echo.
-**PENDING (spike c), one short human run:** the first sitting had no speech model (answers void) and the second
-aborted before the measurement (no system rows after one 3 s English sentence; the core transcribes as French).
-**Decision for now: voice processing stays off by default and `capture.aec` stays false.**
-That is "unmeasured", not "refuted": nothing here claims that echo cancellation works. If the re-run shows that
-voice processing removes the echo without damaging the voice, the default flips to on; if it ducks other audio
-or hurts the Them stream, it stays off and the core's text dedup (ARCHITECTURE 9.2) is the only mitigation.
+**Measured (third sitting, spike c, French sentence spoken 4 times on the speakers, user silent, same session
+setup for both runs):**
+
+| Voice processing | System rows | System rows with the sentence | Visible Me rows in the database |
+|---|---|---|---|
+| off | 4 | 4 | 0 (4 mirrored Me rows stored with `suppressed=1`) |
+| on | 0 | 0 | 0 |
+
+**Decision: voice processing stays off by default, `capture.aec` stays false, the dedup threshold stays at 70 %
+(not 85 %).** With processing off the speaker echo does reach the microphone, but the core's text dedup
+(ARCHITECTURE 9.2) flags every mirrored Me final, so no Me row survives in the public transcript. Cancelling
+the echo at the source is not needed on this evidence (one Mac, built-in speakers, one sentence).
+
+**Finding, voice processing on:** the system stream produced nothing (0 rows against 4, same audio, twice). It is
+more than an inconclusive run. Hypothesis, not verified: enabling `setVoiceProcessingEnabled(true)` makes the
+input node reconfigure the audio hardware (aggregate/IO unit), which rebuilds or invalidates the process tap that
+is bound to the default output device; the agent restarts the microphone on `AVAudioEngineConfigurationChange`
+but does not rebuild the tap on that path. Not investigated further in M1: a device-reconfiguration rewrite does
+not belong in this PR. Follow-up card with the evidence (`c_off` 4 rows, `c_on` 0 rows, same session).
+
+**What the UI does with a suppressed row.** The public transcript (`GET` transcript) excludes suppressed rows
+(`suppressed = 0` filter); they stay in the database. The live panel, however, applies `stt.final` from SSE as
+it arrives and no event announces the suppression, so a mirrored Me row is visible live until the transcript is
+reloaded. This explains the answer `c_mic_echo_visible_off=yes` against 0 visible rows in the database: the
+observer saw the live row. It is a live-display gap, not a storage defect; follow-up card.
 
 ### 3. whisper.cpp packaging
 
@@ -91,5 +112,5 @@ place for it. No code was written.
 
 ## Pending after the sitting
 
-Fill the PENDING items above from `results.json`, flip the AEC default if justified, record the Unix-socket
-fallback decision, and move this ADR to Accepted.
+The spike items are filled. Left: the open gates above, the two follow-ups (voice processing kills the system
+stream; live panel shows a suppressed echo row), and Phuong's acceptance of this ADR.
