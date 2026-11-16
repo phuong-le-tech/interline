@@ -272,6 +272,7 @@ fi
 [ -d "$app" ] || { echo "build the app first (scripts/macos/build-dev-app.sh)"; exit 1; }
 
 say_step "0b. Speech models (one download, checked by sha256; the app refuses to record without them)"
+# models_dir is under $HOME, so it satisfies fetch-models.py's destination guard.
 python3 "$root/scripts/bench/fetch-models.py" "$models_dir" small silero-v6.2.0
 ls -l "$models_dir"
 record models_installed "$(ls "$models_dir" | tr '\n' ' ')"
