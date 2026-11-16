@@ -91,4 +91,33 @@ Certificate rotation (expiry or leak): new identity = one new permission prompt 
 
 To be filled by the M1 spike "confirm on a real Mac which install path keeps the microphone and system-audio permissions across a rebuild". Matrix: signing (ad-hoc, ad-hoc with identifier DR, self-signed identity) x replacement path (install script, Tauri updater, tap cask, local `make install`). For each cell: after a rebuild with a code change, is there a new prompt for microphone, system audio, Keychain; is either stream silent (a silent system stream means the grant was lost, check with `level`); is there a Gatekeeper or App Management dialog. Reset between runs: `tccutil reset Microphone app.interline` and `tccutil reset AudioCapture app.interline` [to verify the service name].
 
-**Status at the end of the M1 implementation: OPEN.** No result has been recorded. The procedure is `scripts/m1/human-gate.sh` (docs/runbooks/M1-EXIT.md section 1, steps d and e); it writes `results.json`, which fills this section. The build and signing scripts it uses exist (`scripts/macos/signing-identity.sh`, `scripts/macos/build-dev-app.sh`) but have not been executed by an agent. The `tccutil reset` service names (`Microphone`, `AudioCapture`) are verified by the exit codes the script records, not assumed.
+**Status after the first sitting (2026-11-15): PARTIAL. Only the identity matrix (d) is valid; (a), (b), (c) and (e) need one re-run.**
+Source: `~/Library/Application Support/app.interline.dev/m1-gate/results.json`, macOS 27.2.1 arm64.
+
+| Signing of the rebuilt app | Microphone asked again | System audio asked again | System stream silent |
+|---|---|---|---|
+| Self-signed identity "Interline Dev Signing", code change | no | no | no |
+| Ad-hoc, code change | yes | yes | yes |
+
+This confirms the premise of the recommendation (option 2): a stable self-signed identity keeps the TCC grants
+across a rebuild, an ad-hoc signature loses them and the system stream then goes silent (which the silent-stream
+detector must turn into the banner). It is one machine and one rebuild path (local `build-dev-app.sh`); the
+updater, install script and tap cells of the matrix stay open and belong to M4.
+
+Not valid and not used (the first sitting ran with no speech model installed, so no transcript existed):
+- (b) "Them text appeared: no" is explained by the missing model, not by a capture defect. Both level meters did
+  move, so the microphone and the tap delivered audio.
+- (c) the echo answers: with no speech engine no Me row could exist either way. Voice processing therefore stays
+  off by default: unmeasured, not refuted. No claim is made that echo cancellation works.
+- (a) the dialog names were not recorded (empty) and the Settings entry name was "idk". Attribution of the
+  prompts to `Interline.app` is therefore still unconfirmed. `tccutil reset ... app.interline.capture` exits 64
+  (usage error), which means that bundle id is not registered with TCC, consistent with the grant being held by
+  `app.interline.desktop` (its reset exits 0 after a grant); it is not a failing reset.
+- (e) the banner appeared 17 s after the Record click. That timer included the human answering both dialogs, so it
+  is not the detector latency; the script now starts the clock at the Deny click. The banner link was reported
+  missing; the settings URI anchor was `Privacy_AudioCapture` and is now `Privacy_ScreenCapture` (the pane that holds
+  "System Audio Recording Only"). Both are to be re-checked in the short re-run (`scripts/m1/human-gate.sh --rerun`).
+
+The `tccutil reset` service names (`Microphone`, `AudioCapture`) accepted by the OS: both services returned exit 0
+for `app.interline.desktop` after a grant.
+

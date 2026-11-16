@@ -41,6 +41,19 @@ writes `~/Library/Application Support/app.interline.dev/m1-gate/results.json`. K
 | (d) rebuild | Microphone, System Audio Recording | same | same | The script rebuilds with a code change signed with the same identity, then ad-hoc; Record and play audio each time | Same identity: no new dialog and Them meter moves. Ad-hoc: expect a dialog and possibly a silent stream | Fills the ADR-004 matrix rows (re-prompt yes/no, stream silent yes/no) |
 | (e) denial | System Audio Recording | Privacy & Security > Screen & System Audio Recording | same | The script runs `tccutil reset` for both services and both bundle ids (exit codes are recorded: they verify the service names), you Deny system audio, play audio | The red banner "I can't hear the other participants" appears in under 10 s | The agent reports `permission.denied` (silent stream detector); the UI shows the banner with an "Open System Settings" link |
 
+### Short re-run (after the first sitting)
+
+The first sitting (2026-11-15) ran with no speech model, so only spike (d) is valid (ADR-004). The re-run covers
+(a), (b), (c) and (e) in about 20 minutes and keeps the (d) answers:
+
+```sh
+scripts/m1/human-gate.sh --rerun
+```
+
+It downloads `small` and the Silero VAD into the app data directory first (sha256 verified), refuses to ask (b) or
+(c) when the database holds no transcript rows for the stream concerned (it offers a retry instead), and starts
+the (e) clock at the Deny click, not at the Record click.
+
 When you are done, tell the agent runner (or comment on card t_1da2fafc) "gate done". It then reads
 `results.json`, writes the ADR-004 "Spike results" and finishes ADR-009; if (a) failed it implements the
 Unix-socket fallback in the same PR.

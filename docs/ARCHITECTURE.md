@@ -201,7 +201,7 @@ Negotiation: the core picks the highest major present in both ranges. No overlap
   "device":{"name":"AirPods Pro","sample_rate":48000,"channels":2},"discontinuity_at_sample":4800000}}
 {"t":"permission.denied","body":{"permission":"system_audio","detection":"silent_stream",
   "evidence":"5 s of exact zeros while another process produces output","can_prompt_again":false,
-  "settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"}}
+  "settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"}}
 ```
 `detection` is `explicit` (API returned denied) or `silent_stream` (macOS process taps return zeros when denied, there is no error). `settings_uri` is opaque to the core: it is passed as is to the UI, which asks the shell to open it. The exact macOS anchor is [to verify].
 
