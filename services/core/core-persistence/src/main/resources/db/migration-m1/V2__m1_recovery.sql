@@ -1,7 +1,11 @@
 -- M1 additive migration, kept in its own Flyway location so the M0 V1 schema suite still sees V1 alone.
 -- 'recovered' marks a meeting whose capture died with the app and was rebuilt from the agent's rescue spool.
 -- SQLite cannot change a CHECK constraint in place: the table is rebuilt (foreign keys are off on this connection).
+-- Flyway does not wrap this file (see the .conf): the PRAGMA is a no-op inside a transaction, so the
+-- rebuild runs in an outermost SAVEPOINT (Flyway's parser reads BEGIN as a block opener), so the
+-- RELEASE commits it and a failure leaves 'meetings' untouched.
 PRAGMA foreign_keys = OFF;
+SAVEPOINT m1_recovery;
 
 CREATE TABLE meetings_m1 (
   id TEXT PRIMARY KEY,
@@ -32,3 +36,5 @@ CREATE TABLE recovery_jobs (
   done INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX recovery_jobs_pending ON recovery_jobs (done, meeting_id);
+
+RELEASE m1_recovery;
