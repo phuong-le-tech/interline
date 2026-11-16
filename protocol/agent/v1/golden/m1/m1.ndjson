@@ -5,6 +5,6 @@
 {"v":1,"t":"permission.status","re":"c-4","ts":0,"body":{"microphone":"granted","system_audio":"unknown"}}
 {"v":1,"t":"permission.request","id":"c-5","ts":0,"body":{"permission":"microphone"}}
 {"v":1,"t":"permission.request","re":"c-5","ts":0,"body":{"microphone":"granted","system_audio":"unknown"}}
-{"v":1,"t":"permission.denied","ts":0,"body":{"session_id":"m-test","permission":"system_audio","detection":"silent_stream","settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"}}
+{"v":1,"t":"permission.denied","ts":0,"body":{"session_id":"m-test","permission":"system_audio","detection":"silent_stream","settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"}}
 {"v":1,"t":"transcribe.file","id":"c-6","ts":0,"body":{"job_id":"j-1","path":"spool/m-test/run-1/system-0-0.wav","stream":"system","stt":{"model_path":"models/model.bin","language":"en","min_silence_ms":500,"target_chunk_s":[5,15],"max_chunk_s":30,"overlap_ms":500,"partials":false}}}
 {"v":1,"t":"transcribe.file.done","re":"c-6","ts":0,"body":{"job_id":"j-1","segments":3,"duration_samples":96000}}

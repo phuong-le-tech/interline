@@ -308,6 +308,6 @@ enum TranscriptMessage {
 }
 
 enum PermissionLinks {
-    static let systemAudio = "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"
+    static let systemAudio = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     static let microphone = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
 }
