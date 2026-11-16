@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,25 +25,31 @@ class ApiController {
     private final RecordingService recording;
     private final DurableCaptureIngest ingest;
     private final EventBus events;
-
     private final ModelService models;
+    private final InterlineProperties properties;
 
-    ApiController(RecordingService recording, DurableCaptureIngest ingest, EventBus events, ModelService models) {
+    ApiController(RecordingService recording, DurableCaptureIngest ingest, EventBus events, ModelService models,
+                  InterlineProperties properties) {
         this.models = models;
         this.recording = recording;
         this.ingest = ingest;
         this.events = events;
+        this.properties = properties;
     }
 
     record StartedRecording(String meetingId) { }
+
+    record StartRequest(String language) { }
 
     record Meeting(String id, String title, String status, Long startedAt, Long endedAt) { }
 
     record TranscriptLine(String stream, String seg, String speaker, long startMs, long endMs, String text) { }
 
     @PostMapping("/recording/start")
-    StartedRecording start() {
-        return new StartedRecording(call(recording::start));
+    StartedRecording start(@RequestBody(required = false) StartRequest request) {
+        String requested = request != null ? request.language() : null;
+        String effective = requested != null ? requested : properties.stt().language();
+        return new StartedRecording(call(() -> recording.start(effective)));
     }
 
     @PostMapping("/recording/stop")

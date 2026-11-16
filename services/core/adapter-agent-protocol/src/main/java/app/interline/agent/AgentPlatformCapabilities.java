@@ -40,7 +40,6 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private static final int PROTOCOL = 1;
     private static final int WINDOW_FRAMES = 50;
     private static final java.util.Set<String> DISPLAY_ONLY = java.util.Set.of("level", "stt.partial", "heartbeat");
-    private static final String DEFAULT_LANGUAGE = "fr";
     private static final int MAX_BATCH_FRAMES = 32;
     private static final Duration POLL_PERIOD = Duration.ofMillis(20);
     private static final Duration READER_JOIN = Duration.ofSeconds(2);
@@ -257,7 +256,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         else listener.finalSegment(segment);
     }
 
-    @Override public void transcribeFile(String jobId, String path, StreamKind stream) {
+    @Override public void transcribeFile(String jobId, String path, StreamKind stream, String language) {
         Link current = link;
         if (current == null || !current.ready) {
             listener.importFailed(jobId, "agent_unavailable", "The capture agent is not connected");
@@ -267,7 +266,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         pendingImports.put(jobId, id);
         ObjectNode body = ControlMessage.nodes().objectNode().put("job_id", jobId).put("path", path)
                 .put("stream", stream.wireName());
-        body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        ObjectNode stt = body.putObject("stt");
+        if (language != null) stt.put("language", language);
+        else stt.putNull("language");
         try {
             current.connection.send(ControlMessage.request(id, "transcribe.file", body));
         } catch (IOException e) {
@@ -353,7 +354,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         body.putObject("audio").put("sample_rate", 16000).put("format", "s16le").put("channels", 1)
                 .put("chunk_ms", 100).put("window", WINDOW_FRAMES);
         body.put("spool_dir", request.spoolDir());
-        var stt = body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        var stt = body.putObject("stt");
+        if (request.language() != null) stt.put("language", request.language());
+        else stt.putNull("language");
         if (request.modelPath() != null) stt.put("model_path", request.modelPath());
         if (request.vadModelPath() != null) stt.put("vad_model_path", request.vadModelPath());
         ResumeState resume = request.resume();

@@ -22,10 +22,14 @@ public record InterlineProperties(
         @DefaultValue("2s") Duration agentHeartbeatInterval,
         String parent,
         @DefaultValue Echo echo,
+        @DefaultValue Stt stt,
         @DefaultValue Models models) {
 
     /** {@code aec}: forces the echo threshold for tests; unset means "ask the agent's capabilities". */
     public record Echo(Boolean aec) { }
+
+    /** {@code language}: default STT language; {@code "auto"} means detect (sent as JSON {@code null}). */
+    public record Stt(@DefaultValue("fr") String language) { }
 
     /** {@code catalog}: a catalog file replacing the bundled one, for tests against a local origin. */
     public record Models(Path catalog) { }
