@@ -2,9 +2,6 @@ package app.interline.app;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.web.server.context.WebServerApplicationContext;
-import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 
 import java.io.*;
@@ -27,7 +24,6 @@ final class AppTestSupport {
     static final Path ROOT = root();
     static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
     static final long SAMPLES = 1_920_000;
-    static final String STANDUP = "standup-fr-2min.transcript.json";
 
     private static Path root() {
         Path p = Path.of(System.getProperty("repo.root", ".")).toAbsolutePath().normalize();
@@ -39,21 +35,6 @@ final class AppTestSupport {
     static Path workspace(String prefix) {
         try { return Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")), prefix); }
         catch (IOException e) { throw new UncheckedIOException(e); }
-    }
-
-    /** Boot the real core in process: same entry point the packaged jar uses, no test configuration class. */
-    static ConfigurableApplicationContext boot(Path directory, Path agent, List<String> agentArguments, String... extra) {
-        List<String> args = new ArrayList<>(List.of("--server.port=0", "--server.address=127.0.0.1",
-                "--interline.token=" + TOKEN, "--interline.data-dir=" + directory,
-                "--interline.log-dir=" + directory.resolve("logs"), "--spring.main.banner-mode=off"));
-        if (agent != null) args.add("--interline.agent=" + agent);
-        for (int i = 0; i < agentArguments.size(); i++) args.add("--interline.agent-args[" + i + "]=" + agentArguments.get(i));
-        args.addAll(List.of(extra));
-        return SpringApplication.run(InterlineApplication.class, args.toArray(String[]::new));
-    }
-
-    static int port(ConfigurableApplicationContext context) {
-        return ((WebServerApplicationContext) context).getWebServer().getPort();
     }
 
     static void properties(DynamicPropertyRegistry r, Path dir, String fault) {
@@ -71,19 +52,14 @@ final class AppTestSupport {
     }
 
     static List<String> agentArgs(Path wav, String fault) {
-        return agentArgs(wav, STANDUP, fault);
-    }
-
-    /** Scripted MockAgent command line: the wav is generated from the same script when it is missing. */
-    static List<String> agentArgs(Path wav, String script, String fault) {
         List<String> args = new ArrayList<>(List.of("--speed=20", "--wav=" + wav,
-                "--script=" + ROOT.resolve("fixtures/audio/" + script)));
+                "--script=" + ROOT.resolve("fixtures/audio/standup-fr-2min.transcript.json")));
         if (fault != null) args.add(fault);
         return args;
     }
 
     static byte[] pcm(int stream, int first, int count) throws IOException {
-        JsonNode regions = JSON.readTree(ROOT.resolve("fixtures/audio/" + STANDUP).toFile()).path("segments");
+        JsonNode regions = JSON.readTree(ROOT.resolve("fixtures/audio/standup-fr-2min.transcript.json").toFile()).path("segments");
         ByteBuffer b = ByteBuffer.allocate(count * 2).order(ByteOrder.LITTLE_ENDIAN);
         String source = stream == 0 ? "mic" : "system";
         java.util.List<int[]> intervals = java.util.stream.StreamSupport.stream(regions.spliterator(), false)
@@ -102,29 +78,22 @@ final class AppTestSupport {
     }
 
     static Path fixture(Path dir) {
-        return fixture(dir, STANDUP);
-    }
-
-    /** Deterministic stereo 16 kHz s16le WAV (left = mic, right = system) voiced over every scripted region. */
-    static Path fixture(Path dir, String script) {
-        Path wav = dir.resolve(script.replace(".transcript.json", ".wav"));
+        Path wav = dir.resolve("standup-fr-2min.wav");
         if (Files.exists(wav)) return wav;
         try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(wav)))) {
-            JsonNode root = JSON.readTree(ROOT.resolve("fixtures/audio/" + script).toFile());
-            JsonNode regions = root.path("segments");
-            int samples = root.path("samples").asInt();
             ByteBuffer h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
-            h.put("RIFF".getBytes()).putInt(36 + samples * 4).put("WAVEfmt ".getBytes())
+            h.put("RIFF".getBytes()).putInt(36 + (int) SAMPLES * 4).put("WAVEfmt ".getBytes())
                     .putInt(16).putShort((short) 1).putShort((short) 2).putInt(16000).putInt(64000)
-                    .putShort((short) 4).putShort((short) 16).put("data".getBytes()).putInt(samples * 4);
+                    .putShort((short) 4).putShort((short) 16).put("data".getBytes()).putInt((int) SAMPLES * 4);
             out.write(h.array());
             // Independently build voiced regions before interleaving the two generated channels.
-            boolean[][] voiced = new boolean[2][samples];
+            JsonNode regions = JSON.readTree(ROOT.resolve("fixtures/audio/standup-fr-2min.transcript.json").toFile()).path("segments");
+            boolean[][] voiced = new boolean[2][(int) SAMPLES];
             for (JsonNode region : regions) {
                 int channel = region.path("stream").asText().equals("mic") ? 0 : 1;
                 Arrays.fill(voiced[channel], region.path("start_sample").asInt(), region.path("end_sample").asInt(), true);
             }
-            for (int i = 0; i < samples; i++) for (int channel = 0; channel < 2; channel++) {
+            for (int i = 0; i < SAMPLES; i++) for (int channel = 0; channel < 2; channel++) {
                 short sample = voiced[channel][i] ? (short) ((i * (channel == 0 ? 37L : 53L) % 20001) - 10000) : 0;
                 out.writeByte(sample & 255); out.writeByte((sample >>> 8) & 255);
             }
@@ -140,27 +109,6 @@ final class AppTestSupport {
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).as("%s %s: %s", method, path, response.body()).isEqualTo(200);
         return response.body().isBlank() ? JSON.nullNode() : JSON.readTree(response.body());
-    }
-
-    /** Raw exchange, for a request whose status the caller wants to assert itself. A null body sends no payload. */
-    static HttpResponse<String> exchange(int port, String method, String path, String body) throws Exception {
-        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1" + path))
-                .timeout(Duration.ofSeconds(5)).header("Authorization", "Bearer " + TOKEN)
-                .header("Content-Type", "application/json")
-                .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
-        return HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
-    }
-
-    /** POST with an explicit JSON body (or no body when null); asserts 200 and returns the parsed reply. */
-    static JsonNode post(int port, String path, String body) throws Exception {
-        var response = exchange(port, "POST", path, body);
-        assertThat(response.statusCode()).as("POST %s %s: %s", path, body, response.body()).isEqualTo(200);
-        return response.body().isBlank() ? JSON.nullNode() : JSON.readTree(response.body());
-    }
-
-    static long count(Path dir, String sql) throws Exception {
-        Object value = rows(dir, sql).getFirst().values().iterator().next();
-        return ((Number) value).longValue();
     }
 
     static List<Map<String, Object>> rows(Path dir, String sql, Object... args) throws Exception {
@@ -206,28 +154,6 @@ final class AppTestSupport {
         }
         List<String> states(String id) { return received.stream().filter(e -> e.name.equals("recording.state") && e.data.path("meetingId").asText().equals(id)).map(e -> e.data.path("state").asText()).toList(); }
         void state(String id, String state) { await().atMost(Duration.ofSeconds(25)).untilAsserted(() -> assertThat(states(id)).contains(state)); }
-
-        List<Event> of(String name) {
-            return received.stream().filter(e -> e.name.equals(name)).toList();
-        }
-
-        /** {@code stt.final} and {@code transcript.suppressed} of one meeting, in arrival order, as "event:stream:seg". */
-        List<String> transcript(String id) {
-            return received.stream()
-                    .filter(e -> e.name.equals("stt.final") || e.name.equals("transcript.suppressed"))
-                    .filter(e -> e.data.path("meetingId").asText().equals(id))
-                    .map(e -> e.name + ":" + e.data.path("stream").asText() + ":" + e.data.path("seg").asText())
-                    .toList();
-        }
-
-        /** The rows the core asked the panel to remove, as "stream:seg", in arrival order. */
-        List<String> suppressed(String id) {
-            return of("transcript.suppressed").stream()
-                    .filter(e -> e.data.path("meetingId").asText().equals(id))
-                    .map(e -> e.data.path("stream").asText() + ":" + e.data.path("seg").asText())
-                    .toList();
-        }
-
         public void close() throws Exception { input.close(); reader.join(2000); }
     }
 }

@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static app.interline.app.AppTestSupport.*;
+import static app.interline.app.LiveTestSupport.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 

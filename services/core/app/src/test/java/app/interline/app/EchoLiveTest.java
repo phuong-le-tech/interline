@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static app.interline.app.AppTestSupport.*;
+import static app.interline.app.LiveTestSupport.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 
@@ -37,7 +38,7 @@ class EchoLiveTest {
 
     private static void awaitTranscript(Events events, String id, String expected) {
         await().atMost(PLAYBACK).untilAsserted(() ->
-                assertThat(events.transcript(id)).as("transcript events of " + id).contains(expected));
+                assertThat(transcript(events, id)).as("transcript events of " + id).contains(expected));
     }
 
     private static List<JsonNode> agentFinals(List<JsonNode> observations, String seg) {
@@ -54,7 +55,7 @@ class EchoLiveTest {
 
             awaitTranscript(events, id, "transcript.suppressed:mic:m-echo-2");
 
-            assertThat(events.transcript(id)).as("mic final, then the mirroring system final, then the suppression")
+            assertThat(transcript(events, id)).as("mic final, then the mirroring system final, then the suppression")
                     .containsSubsequence("stt.final:mic:m-echo-2", "stt.final:system:s-echo-2",
                             "transcript.suppressed:mic:m-echo-2");
         }
@@ -66,7 +67,7 @@ class EchoLiveTest {
 
             awaitTranscript(events, id, "transcript.suppressed:mic:m-echo-1");
 
-            assertThat(events.transcript(id)).as("the mirrored mic final is published, then its suppression")
+            assertThat(transcript(events, id)).as("the mirrored mic final is published, then its suppression")
                     .containsSubsequence("stt.final:system:s-echo-1", "stt.final:mic:m-echo-1",
                             "transcript.suppressed:mic:m-echo-1");
         }
@@ -79,9 +80,9 @@ class EchoLiveTest {
             // The duplicated mic row is the last scripted final, so this waits for the whole fixture.
             awaitTranscript(events, id, "stt.final:mic:m-dup");
 
-            assertThat(events.transcript(id)).as("the unpaired mic final still reaches the panel")
+            assertThat(transcript(events, id)).as("the unpaired mic final still reaches the panel")
                     .contains("stt.final:mic:m-solo");
-            assertThat(events.suppressed(id)).as("a mic final with no system twin is never suppressed")
+            assertThat(suppressed(events, id)).as("a mic final with no system twin is never suppressed")
                     .doesNotContain("mic:m-solo");
         }
     }
@@ -93,9 +94,9 @@ class EchoLiveTest {
 
             awaitTranscript(events, id, "stt.final:system:s-8");
 
-            assertThat(events.transcript(id)).as("every scripted final of the ordinary meeting is published")
+            assertThat(transcript(events, id)).as("every scripted final of the ordinary meeting is published")
                     .hasSize(16);
-            assertThat(events.of("transcript.suppressed")).as("no echo in the ordinary meeting").isEmpty();
+            assertThat(of(events, "transcript.suppressed")).as("no echo in the ordinary meeting").isEmpty();
         }
     }
 
@@ -111,10 +112,10 @@ class EchoLiveTest {
             await().atMost(PLAYBACK).untilAsserted(() ->
                     assertThat(agentFinals(probe.observations(), "m-dup")).as("the agent really sent m-dup twice")
                             .hasSize(2));
-            assertThat(events.transcript(id)).as("one stt.final per (stream,seg), one suppression per seg")
+            assertThat(transcript(events, id)).as("one stt.final per (stream,seg), one suppression per seg")
                     .filteredOn("stt.final:mic:m-dup"::equals).hasSize(1);
-            assertThat(events.transcript(id)).filteredOn("stt.final:system:s-dup"::equals).hasSize(1);
-            assertThat(events.transcript(id)).filteredOn("transcript.suppressed:mic:m-dup"::equals).hasSize(1);
+            assertThat(transcript(events, id)).filteredOn("stt.final:system:s-dup"::equals).hasSize(1);
+            assertThat(transcript(events, id)).filteredOn("transcript.suppressed:mic:m-dup"::equals).hasSize(1);
         }
     }
 }
