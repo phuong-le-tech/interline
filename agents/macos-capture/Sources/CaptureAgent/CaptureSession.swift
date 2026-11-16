@@ -168,6 +168,7 @@ final class CaptureSession {
     // MARK: live devices
 
     private func startDevices(_ setup: LiveSetup) throws {
+        let diagnostics = CaptureDiagnostics(clock: { Int(DispatchTime.now().uptimeNanoseconds / 1_000_000) }, sink: log)
         let devices = LiveCapture(
             onFrame: { [weak self] stream, pcm in self?.queue.async { self?.liveFrame(stream: stream, pcm: pcm) } },
             onDeviceChange: { [weak self] stream, name in
@@ -181,7 +182,8 @@ final class CaptureSession {
                 self.transport.send(.event("error", ["code": "device_failure", "severity": "warn", "retryable": true,
                                                      "session_id": self.request.id,
                                                      "message": "\(StreamID.name(stream)): \(reason)"]))
-            })
+            },
+            diagnostics: diagnostics)
         try devices.start(voiceProcessing: setup.voiceProcessing)
         live = devices
     }
