@@ -67,6 +67,9 @@ export class CoreClient {
   constructor(private readonly endpoint: Endpoint) {}
 
   private url(path: string): string {
+    if (!path.startsWith('/') || path.includes('..')) {
+      throw new Error(`invalid API path: ${path}`);
+    }
     return `http://127.0.0.1:${this.endpoint.port}/api/v1${path}`;
   }
 
@@ -75,8 +78,11 @@ export class CoreClient {
   }
 
   private async json<T>(path: string, init?: RequestInit): Promise<T> {
-    const signal = init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-    const response = await fetch(this.url(path), { ...init, signal, headers: { ...this.headers(), ...init?.headers } });
+    const response = await fetch(this.url(path), {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { ...this.headers(), ...init?.headers },
+    });
     if (!response.ok) {
       const problem = (await response.json().catch(() => ({}))) as { detail?: string; code?: string };
       throw Object.assign(new Error(problem.detail ?? `HTTP ${response.status}`), { code: problem.code });

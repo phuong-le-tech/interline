@@ -6,28 +6,48 @@ Reads the packaged catalog, resumes partial downloads with HTTP Range and verifi
 """
 import hashlib
 import json
-import os
+import pathlib
 import re
 import sys
+import tempfile
 import urllib.request
 
-CATALOG = os.path.join(os.path.dirname(__file__), "../../services/core/app/src/main/resources/models/catalog.json")
+CATALOG = pathlib.Path(__file__).resolve().parents[2] / "services/core/app/src/main/resources/models/catalog.json"
 CHUNK = 1 << 20
 _FILE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _URL_RE = re.compile(r"^https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+$")
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _safe_dir(path: str) -> str:
+def _allowed_roots() -> list[pathlib.Path]:
+    roots = [pathlib.Path.cwd(), pathlib.Path.home()]
+    tmp = pathlib.Path("/tmp").resolve()
+    if tmp not in roots:
+        roots.append(tmp)
+    try:
+        tmpdir = pathlib.Path(tempfile.gettempdir()).resolve()
+        if tmpdir not in roots:
+            roots.append(tmpdir)
+    except (OSError, RuntimeError):
+        pass
+    return roots
+
+
+def _inside_any(path: pathlib.Path) -> pathlib.Path:
+    resolved = path.resolve()
+    if any(resolved == root or resolved.is_relative_to(root) for root in _allowed_roots()):
+        return resolved
+    raise SystemExit(f"path is outside allowed directories: {path}")
+
+
+def _safe_dir(path: str) -> pathlib.Path:
     if "\x00" in path:
         raise SystemExit(f"invalid path: {path}")
-    resolved = os.path.realpath(path)
-    os.makedirs(resolved, exist_ok=True)
-    return resolved
+    return _inside_any(pathlib.Path(path))
 
 
 def _safe_file_name(name: str) -> str:
-    if not name or os.path.basename(name) != name or not _FILE_RE.fullmatch(name):
+    if not name or pathlib.Path(name).name != name or not _FILE_RE.fullmatch(name):
         raise SystemExit(f"invalid model file name: {name}")
     return name
 
@@ -38,38 +58,40 @@ def _safe_url(url: str) -> str:
     return url
 
 
-def sha256_of(path: str) -> str:
+def sha256_of(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
+    with path.open("rb") as handle:
         for block in iter(lambda: handle.read(CHUNK), b""):
             digest.update(block)
     return digest.hexdigest()
 
 
-def fetch(entry: dict, dest: str) -> None:
+def fetch(entry: dict, dest: pathlib.Path) -> None:
     file_name = _safe_file_name(entry["file"])
     url = _safe_url(entry["url"])
     expected_sha = entry.get("sha256")
     if not isinstance(expected_sha, str) or not _SHA_RE.fullmatch(expected_sha):
         raise SystemExit(f"{entry.get('id', '?')}: invalid sha256")
-    target = os.path.join(dest, file_name)
-    if os.path.exists(target) and sha256_of(target) == expected_sha:
+    target = dest / file_name
+    if not target.resolve().is_relative_to(dest):
+        raise SystemExit(f"path escapes destination: {target}")
+    if target.exists() and sha256_of(target) == expected_sha:
         print(f"{entry['id']}: already present")
         return
-    part = target + ".part"
-    have = os.path.getsize(part) if os.path.exists(part) else 0
+    part = target.with_suffix(target.suffix + ".part")
+    have = part.stat().st_size if part.exists() else 0
     request = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
     with urllib.request.urlopen(request) as response:
         if have and response.status != 206:
             have = 0
         mode = "ab" if have else "wb"
-        with open(part, mode) as out:
+        with part.open(mode) as out:
             while block := response.read(CHUNK):
                 out.write(block)
     if sha256_of(part) != expected_sha:
-        os.remove(part)
+        part.unlink()
         raise SystemExit(f"{entry['id']}: checksum mismatch, partial file deleted")
-    os.replace(part, target)
+    part.replace(target)
     print(f"{entry['id']}: downloaded and verified")
 
 
@@ -79,7 +101,7 @@ def main(argv: list[str]) -> int:
         return 2
     dest = _safe_dir(argv[1])
     wanted = set(argv[2:])
-    with open(CATALOG, encoding="utf-8") as handle:
+    with CATALOG.open(encoding="utf-8") as handle:
         entries = json.load(handle)
     for entry in entries:
         if not wanted or entry["id"] in wanted:

@@ -47,8 +47,8 @@ def catalog(path):
     for row in entries:
         identifier = row["id"]
         url = row["url"]
-        require(re.fullmatch(r"https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", url),
-                f"AC8_catalog_{identifier}: URL must pin a full HF commit")
+        if not re.fullmatch(r"https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", url):
+            raise AssertionError(f"AC8_catalog_{identifier}: URL must pin a full HF commit")
         request = urllib.request.Request(url, method="HEAD")
         # The original response carries x-linked-*; do not follow a redirect to a signed blob.
         class NoRedirect(urllib.request.HTTPRedirectHandler):

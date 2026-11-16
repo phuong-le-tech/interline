@@ -72,9 +72,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Build the Swift agent
+      - name: Resolve and build the Swift agent
         working-directory: agents/macos-capture
-        run: swift build -c release
+        run: |
+          swift package resolve
+          swift build -c release
       - name: Swift self-tests
         working-directory: agents/macos-capture
         run: swift run -c release CaptureSelfTest
