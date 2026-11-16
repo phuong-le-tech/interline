@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CoreClient, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
+  EMPTY_TRANSCRIPT,
   MICROPHONE_SETTINGS_URI,
   SYSTEM_AUDIO_SETTINGS_URI,
-  applyFinal,
-  applyPartial,
+  applyLiveEvent,
   barState,
   type PermissionKind,
-  type TranscriptRow,
+  type LiveTranscript,
 } from './liveState';
 import { Meters, type Levels } from './Meters';
 import { Models } from './Models';
@@ -30,7 +30,7 @@ export function App() {
   const [client, setClient] = useState<CoreClient>();
   const [slowStart, setSlowStart] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [rows, setRows] = useState<TranscriptRow[]>([]);
+  const [transcript, setTranscript] = useState<LiveTranscript>(EMPTY_TRANSCRIPT);
   const [models, setModels] = useState<ModelView[]>([]);
   const [levels, setLevels] = useState<Levels>(SILENT_LEVELS);
   const [banners, setBanners] = useState<Banners>({});
@@ -72,10 +72,9 @@ export function App() {
           break;
         }
         case 'stt.partial':
-          setRows((current) => applyPartial(current, data as never));
-          break;
         case 'stt.final':
-          setRows((current) => applyFinal(current, data as never));
+        case 'transcript.suppressed':
+          setTranscript((current) => applyLiveEvent(current, event.name, data));
           break;
         case 'permission.denied': {
           const kind: PermissionKind = data.permission === 'microphone' ? 'microphone' : 'system_audio';
@@ -109,7 +108,7 @@ export function App() {
     if (!client) return;
     setError(undefined);
     setBanners({});
-    setRows([]);
+    setTranscript(EMPTY_TRANSCRIPT);
     setState('starting');
     try {
       await client.startRecording();
@@ -163,7 +162,7 @@ export function App() {
         <>
           <h2>Transcript</h2>
           <ul aria-label="Transcript">
-            {rows.map((row) => (
+            {transcript.rows.map((row) => (
               <li key={row.key} aria-busy={!row.final} className={row.final ? undefined : 'partial'}>
                 <strong>{row.speaker}</strong> {row.text}
               </li>

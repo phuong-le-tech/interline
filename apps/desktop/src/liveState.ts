@@ -80,15 +80,30 @@ export type LiveTranscript = { rows: TranscriptRow[]; suppressed: string[] };
 export const EMPTY_TRANSCRIPT: LiveTranscript = { rows: [], suppressed: [] };
 
 /**
- * Apply one transcript SSE event. `stt.partial` and `stt.final` settle their row, `transcript.suppressed` removes
- * the row of that key and remembers it, so a later partial or final on the same key cannot bring it back. Any other
- * event name leaves the state untouched.
+ * Apply one transcript SSE event. `stt.partial` and `stt.final` settle their row unless the key was already
+ * suppressed; `transcript.suppressed` removes the row of that key and remembers it, so a later partial or final on
+ * the same key cannot bring it back. Any other event name leaves the state untouched.
  */
 export function applyLiveEvent(state: LiveTranscript, name: string, data: unknown): LiveTranscript {
-  void state;
-  void name;
-  void data;
-  throw new Error('applyLiveEvent is not implemented');
+  if (name === 'transcript.suppressed') {
+    const event = data as { stream: string; seg: string };
+    const key = `${event.stream}:${event.seg}`;
+    return {
+      rows: state.rows.filter((row) => row.key !== key),
+      suppressed: state.suppressed.includes(key) ? state.suppressed : [...state.suppressed, key],
+    };
+  }
+
+  if (name !== 'stt.partial' && name !== 'stt.final') return state;
+
+  const event = data as SegmentEvent;
+  const key = rowKey(event);
+  if (state.suppressed.includes(key)) return state;
+
+  const rows = name === 'stt.final'
+    ? applyFinal(state.rows, event)
+    : applyPartial(state.rows, event);
+  return { ...state, rows };
 }
 
 export function isSettingsUri(uri: string): boolean {
