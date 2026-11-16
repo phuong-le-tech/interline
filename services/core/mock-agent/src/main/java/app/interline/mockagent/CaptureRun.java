@@ -20,7 +20,7 @@ final class CaptureRun implements Runnable {
     static final int FRAME_SAMPLES = 1600;
     static final int CRASH_EXIT_CODE = 13;
     static final String SYSTEM_AUDIO_SETTINGS_URI =
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture";
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
     private static final String[] STREAMS = {"mic", "system"};
     private static final long TICK_NANOS = 100_000_000L;
     private static final long WINDOW_POLL_NANOS = 1_000_000L;

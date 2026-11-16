@@ -353,7 +353,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         body.putObject("audio").put("sample_rate", 16000).put("format", "s16le").put("channels", 1)
                 .put("chunk_ms", 100).put("window", WINDOW_FRAMES);
         body.put("spool_dir", request.spoolDir());
-        body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        var stt = body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        if (request.modelPath() != null) stt.put("model_path", request.modelPath());
+        if (request.vadModelPath() != null) stt.put("vad_model_path", request.vadModelPath());
         ResumeState resume = request.resume();
         if (resume == null) {
             body.putNull("resume");

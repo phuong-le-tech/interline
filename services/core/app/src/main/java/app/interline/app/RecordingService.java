@@ -37,17 +37,29 @@ public class RecordingService implements CaptureListener {
     private static final long SHUTDOWN_WAIT_MS = 3500;
     private static final long FRAME_MS = 100;
     private static final String PERMISSION_MISSING = "permission_missing";
+    private static final String MODEL_MISSING = "model_missing";
+    /** Engines that transcribe without a model file: the scripted mock, or an agent with no speech engine at all. */
+    private static final java.util.Set<String> MODELLESS_ENGINES = java.util.Set.of("scripted", "none");
 
     /** Raised when a request cannot be served; the HTTP layer maps {@code status} to the response. */
     public static final class RecordingException extends RuntimeException {
         private final int status;
+        private final String code;
 
         RecordingException(int status, String message) {
+            this(status, null, message);
+        }
+
+        RecordingException(int status, String code, String message) {
             super(message);
             this.status = status;
+            this.code = code;
         }
 
         public int status() { return status; }
+
+        /** Stable machine-readable reason, or null when the status alone says it all. */
+        public String code() { return code; }
     }
 
     private final DurableCaptureIngest ingest;
@@ -56,6 +68,7 @@ public class RecordingService implements CaptureListener {
     private final Clock clock;
     private final Path spoolRoot;
     private final OrphanRecovery recovery;
+    private final SpeechModels models;
     private final Map<String, Map<StreamKind, List<Long>>> sttLatencies = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionT0 = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -89,7 +102,8 @@ public class RecordingService implements CaptureListener {
     }
 
     public RecordingService(DurableCaptureIngest ingest, EventBus events, Clock clock, Path dataDirectory,
-                            OrphanRecovery recovery) {
+                            OrphanRecovery recovery, SpeechModels models) {
+        this.models = models;
         this.ingest = ingest;
         this.store = ingest.store();
         this.events = events;
@@ -100,6 +114,11 @@ public class RecordingService implements CaptureListener {
     }
 
     public synchronized void bind(AudioCapture capture) { this.capture = capture; }
+
+    private boolean needsSpeechModel() {
+        AgentInfo current = agent;
+        return current != null && !MODELLESS_ENGINES.contains(current.sttEngine());
+    }
 
     /** True when the connected agent says it cancels echo in the microphone path. */
     public boolean agentCancelsEcho() {
@@ -112,6 +131,9 @@ public class RecordingService implements CaptureListener {
             throw new RecordingException(503, "Capture is unavailable" + (unavailableCode == null ? "" : ": " + unavailableCode));
         }
         if (active != null) throw new RecordingException(409, "A recording is already running");
+        if (needsSpeechModel() && models.speechModel().isEmpty()) {
+            throw new RecordingException(409, MODEL_MISSING, "No speech model is installed: download one from the Models screen first");
+        }
         String id = UuidV7.next(clock.millis());
         ingest.openMeeting(id);
         active = new Meeting(id);
@@ -321,7 +343,8 @@ public class RecordingService implements CaptureListener {
         String spoolDir = spoolRoot.resolve(meeting.id).resolve("run-" + meeting.sessionsStarted).toString();
         ResumeState resume = resuming ? resumeState(meeting) : null;
         meeting.spoolDirs.add(spoolDir);
-        capture.start(new CaptureRequest(meeting.id, spoolDir, resume));
+        capture.start(new CaptureRequest(meeting.id, spoolDir, resume,
+                models.speechModel().map(Path::toString).orElse(null), models.vadModel().map(Path::toString).orElse(null)));
     }
 
     private ResumeState resumeState(Meeting meeting) {

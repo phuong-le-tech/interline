@@ -33,8 +33,9 @@ class CoreConfiguration {
     }
 
     @Bean RecordingService recordingService(DurableCaptureIngest ingest, EventBus events, Clock clock,
-                                            InterlineProperties properties, OrphanRecovery recovery) {
-        RecordingService service = new RecordingService(ingest, events, clock, properties.dataDir(), recovery);
+                                            InterlineProperties properties, OrphanRecovery recovery, ModelService models) {
+        RecordingService service = new RecordingService(ingest, events, clock, properties.dataDir(), recovery,
+                SpeechModels.overriddenBy(properties.agentArgs(), models));
         ingest.useAecSource(() -> properties.echo().aec() != null ? properties.echo().aec() : service.agentCancelsEcho());
         return service;
     }

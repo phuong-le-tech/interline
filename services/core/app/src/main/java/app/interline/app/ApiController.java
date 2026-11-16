@@ -2,6 +2,8 @@ package app.interline.app;
 
 import app.interline.persistence.CaptureStore;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -93,7 +95,12 @@ class ApiController {
         try {
             return action.get();
         } catch (RecordingService.RecordingException e) {
-            throw new ResponseStatusException(HttpStatus.valueOf(e.status()), e.getMessage());
+            HttpStatus status = HttpStatus.valueOf(e.status());
+            if (e.code() == null) throw new ResponseStatusException(status, e.getMessage());
+            ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, e.getMessage());
+            problem.setTitle(e.code());
+            problem.setProperty("code", e.code());
+            throw new ErrorResponseException(status, problem, e);
         }
     }
 }

@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
  * The model catalog and the only code path that downloads from it, started by an explicit user request.
  * The catalog pins every file to a commit URL, a size and a SHA-256 (ARCHITECTURE 14).
  */
-public class ModelService implements AutoCloseable {
+public class ModelService implements AutoCloseable, SpeechModels {
     private static final System.Logger LOG = System.getLogger(ModelService.class.getName());
     private static final String BUNDLED_CATALOG = "/models/catalog.json";
     private static final String DEFAULT_KIND = "stt";
@@ -66,12 +66,20 @@ public class ModelService implements AutoCloseable {
     /** Arguments that point the agent at the installed models, largest speech model first. */
     public List<String> agentArguments() {
         List<String> args = new ArrayList<>();
-        catalog.stream().filter(e -> DEFAULT_KIND.equals(e.kind()) && Files.exists(models.resolve(e.file())))
-                .reduce((smaller, larger) -> larger.sizeBytes() >= smaller.sizeBytes() ? larger : smaller)
-                .ifPresent(e -> args.add("--model=" + models.resolve(e.file())));
-        catalog.stream().filter(e -> "vad".equals(e.kind()) && Files.exists(models.resolve(e.file()))).findFirst()
-                .ifPresent(e -> args.add("--vad-model=" + models.resolve(e.file())));
+        speechModel().ifPresent(path -> args.add(MODEL_ARGUMENT + path));
+        vadModel().ifPresent(path -> args.add(VAD_MODEL_ARGUMENT + path));
         return args;
+    }
+
+    @Override public Optional<Path> speechModel() {
+        return catalog.stream().filter(e -> DEFAULT_KIND.equals(e.kind()) && Files.exists(models.resolve(e.file())))
+                .reduce((smaller, larger) -> larger.sizeBytes() >= smaller.sizeBytes() ? larger : smaller)
+                .map(e -> models.resolve(e.file()));
+    }
+
+    @Override public Optional<Path> vadModel() {
+        return catalog.stream().filter(e -> "vad".equals(e.kind()) && Files.exists(models.resolve(e.file()))).findFirst()
+                .map(e -> models.resolve(e.file()));
     }
 
     private void run(Entry entry) {
