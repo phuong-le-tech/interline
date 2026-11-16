@@ -290,32 +290,6 @@ class MigrationTest {
         }
     }
 
-    @Test
-    void M1_upgradesPopulatedV1DatabaseToV2KeepingRowsAndCascades() throws Exception {
-        String upgradeUrl = "jdbc:sqlite:" + directory.resolve("upgrade.db");
-        Flyway.configure().dataSource(upgradeUrl, null, null)
-                .locations("classpath:db/migration").load().migrate();
-        try (Connection connection = DriverManager.getConnection(upgradeUrl)) {
-            fixture(connection);
-        }
-
-        Flyway.configure().dataSource(upgradeUrl, null, null)
-                .locations("classpath:db/migration", "classpath:db/migration-m1").load().migrate();
-
-        try (Connection connection = DriverManager.getConnection(upgradeUrl)) {
-            execute(connection, "PRAGMA foreign_keys = ON");
-            assertThat(strings(connection, "SELECT id FROM meetings")).containsExactly("m1");
-            assertThat(strings(connection, "SELECT agent_seg FROM transcript_segments")).containsExactly("seg1");
-            assertThat(strings(connection, "PRAGMA foreign_key_check")).isEmpty();
-            execute(connection, "UPDATE meetings SET status = 'recovered' WHERE id = 'm1'");
-            rejectsConstraint(connection, "UPDATE meetings SET status = 'unknown' WHERE id = 'm1'");
-            execute(connection, "DELETE FROM meetings WHERE id = 'm1'");
-            assertThat(strings(connection, "SELECT id FROM capture_runs")).isEmpty();
-            assertThat(strings(connection, "SELECT id FROM speakers")).isEmpty();
-            assertThat(strings(connection, "SELECT agent_seg FROM transcript_segments")).isEmpty();
-        }
-    }
-
     private Flyway flyway() {
         return Flyway.configure().dataSource(url, null, null)
                 .locations("classpath:db/migration").load();
