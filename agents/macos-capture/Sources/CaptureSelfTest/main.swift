@@ -306,7 +306,8 @@ for (name, silence, target, maximum, overlap) in [
         try rejects { _ = try ChunkPolicy(minSilenceMS: silence, targetSeconds: target, maxSeconds: maximum, overlapMS: overlap) }
     }
 }
-for filename in ["m0.ndjson", "m1.ndjson"] {
+// M1 lives in golden/m1/ so the unchanged M0 Java GoldenTest (non-recursive, exactly 15 M0 types) never sees it.
+for filename in ["m0.ndjson", "m1/m1.ndjson"] {
     test("AC3_\(filename)_corpus_present_nonempty") {
         let file = goldens.appendingPathComponent(filename)
         try require(FileManager.default.fileExists(atPath: file.path), "missing shared golden \(filename)")
@@ -315,8 +316,7 @@ for filename in ["m0.ndjson", "m1.ndjson"] {
 }
 // Discover future M1 corpus additions without changing shared goldens.
 do {
-    let files = try FileManager.default.contentsOfDirectory(at: goldens, includingPropertiesForKeys: nil)
-        .filter { $0.pathExtension == "ndjson" }.sorted { $0.path < $1.path }
+    let files = ["m0.ndjson", "m1/m1.ndjson"].map { goldens.appendingPathComponent($0) }
     for file in files {
         for (index, bytes) in try rows(file).enumerated() {
             let original = try object(bytes)

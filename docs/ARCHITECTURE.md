@@ -589,7 +589,7 @@ interline/
                                SpeechWhisper, CalendarMac, SecretsMac; Tests/
     windows-capture/README.md  contract + planned APIs, no code
     linux-capture/README.md    contract + planned APIs, no code
-  protocol/agent/v1/           schema.json, golden/*.ndjson + *.bin, CHANGELOG.md
+  protocol/agent/v1/           schema.json, golden/m0.ndjson, golden/m1/m1.ndjson + *.bin, CHANGELOG.md
   fixtures/
     audio/                     short WAVs (stereo mic|system) + scripted transcripts, CC0 or self-recorded
     meetings/                  5 anonymised golden meetings (enhancement evaluation)

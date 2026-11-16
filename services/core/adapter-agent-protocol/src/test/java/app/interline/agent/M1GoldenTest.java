@@ -62,7 +62,8 @@ class M1GoldenTest {
     }
 
     private static List<JsonNode> corpus(String milestone) throws Exception {
-        Path file = ROOT.resolve("protocol/agent/v1/golden/" + milestone + ".ndjson");
+        // m1 lives in a subdirectory: the unchanged M0 GoldenTest lists golden/ non-recursively and expects exactly the 15 M0 types.
+        Path file = ROOT.resolve("protocol/agent/v1/golden/" + (milestone.equals("m0") ? "" : milestone + "/") + milestone + ".ndjson");
         assertThat(file).as("Required %s protocol corpus", milestone).isRegularFile();
         var rows = new ArrayList<JsonNode>();
         for (String line : Files.readAllLines(file)) rows.add(JSON.readTree(line));

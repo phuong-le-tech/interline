@@ -64,6 +64,6 @@ Chunk policy permits finalization at >=5 seconds with >=500 ms silence; continuo
 
 ## Control protocol
 
-AC3 discovers shared NDJSON corpora relative to the source path, checks semantic control roundtrips, and rejects missing/wrong-typed envelope fields, malformed acknowledgements, truncated JSON, invalid UTF-8, and control input above 1 MiB. The explicit `m1.ndjson` presence case fails if that shared corpus is absent. Shared goldens and schemas are not changed by this package.
+AC3 discovers shared NDJSON corpora relative to the source path, checks semantic control roundtrips, and rejects missing/wrong-typed envelope fields, malformed acknowledgements, truncated JSON, invalid UTF-8, and control input above 1 MiB. The explicit `golden/m1/m1.ndjson` presence case fails if that shared corpus is absent. Shared goldens and schemas are not changed by this package.
 
 Unknown request types must decode with their type and request id available for dispatch to produce correlated `unsupported_message` (ARCHITECTURE 5.1). Rejecting them in the decoder would prevent that behavior, so the previous unknown-type rejection was replaced by a decode/correlation-preservation test. This does not assert that the stub implements dispatch. Shared schema type restrictions remain a separate Java validation concern.
