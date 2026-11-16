@@ -14,19 +14,33 @@ import pathlib
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-JAR = ROOT / "services/core/app/target/interline-core.jar"
-AGENT = ROOT / "agents/macos-capture/.build/release/interline-capture-macos"
-DEFAULT_SESSION = ROOT / "fixtures/speech/session-10min.wav"
+JAR = (ROOT / "services/core/app/target/interline-core.jar").resolve()
+AGENT = (ROOT / "agents/macos-capture/.build/release/interline-capture-macos").resolve()
+DEFAULT_SESSION = (ROOT / "fixtures/speech/session-10min.wav").resolve()
 SESSION_SECONDS = 610
 SETTLE_SECONDS = 8
 BOOT_TIMEOUT_SECONDS = 30
 MODEL = "small"
 MODEL_FILES = ("ggml-small.bin", "ggml-silero-v6.2.0.bin")
+
+
+def _resolve_dir(path: str) -> pathlib.Path:
+    p = pathlib.Path(path).resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _resolve_file(path: str) -> pathlib.Path:
+    p = pathlib.Path(path).resolve()
+    if not p.is_file():
+        raise SystemExit(f"not a file: {path}")
+    return p
 
 
 class Core:
@@ -35,7 +49,8 @@ class Core:
         data = work / "data"
         (data / "models").mkdir(parents=True)
         for name in MODEL_FILES:
-            (data / "models" / name).symlink_to((models / name).resolve())
+            source = _resolve_file(str(models / name))
+            (data / "models" / name).symlink_to(source)
         self.log_dir = work / "logs"
         args = [
             "java", "-jar", str(JAR), f"--data-dir={data}", f"--log-dir={self.log_dir}", f"--agent={AGENT}",
@@ -107,14 +122,13 @@ def main(argv: list[str]) -> int:
     if len(args) < 2:
         print(__doc__, file=sys.stderr)
         return 2
-    evidence, models = pathlib.Path(args[0]), pathlib.Path(args[1])
-    session = pathlib.Path(args[2]) if len(args) > 2 else DEFAULT_SESSION
+    evidence = _resolve_dir(args[0])
+    models = _resolve_dir(args[1])
+    session = _resolve_file(args[2]) if len(args) > 2 else DEFAULT_SESSION
     for needed in (JAR, AGENT, session, *(models / n for n in MODEL_FILES)):
         if not needed.exists():
             raise SystemExit(f"missing {needed}")
-    evidence.mkdir(parents=True, exist_ok=True)
-    work = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / f"interline-latency-{os.getpid()}"
-    work.mkdir()
+    work = pathlib.Path(tempfile.mkdtemp(prefix="interline-latency-"))
     core = Core(work, models, session)
     finals: list = []
     stop = threading.Event()

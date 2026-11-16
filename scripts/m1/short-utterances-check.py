@@ -12,6 +12,7 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -50,12 +51,13 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     launcher = load_launcher()
-    models = pathlib.Path(argv[1])
-    session = pathlib.Path(argv[2]) if len(argv) > 2 else launcher.ROOT / "fixtures/speech/short-system.wav"
+    models = pathlib.Path(argv[1]).resolve()
+    session = pathlib.Path(argv[2]).resolve() if len(argv) > 2 else launcher.DEFAULT_SESSION
+    if not session.is_file():
+        raise SystemExit(f"not a file: {session}")
     with wave.open(str(session), "rb") as source:
         seconds = source.getnframes() / source.getframerate()
-    work = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / f"interline-short-{os.getpid()}"
-    work.mkdir()
+    work = pathlib.Path(tempfile.mkdtemp(prefix="interline-short-"))
     core = launcher.Core(work, models, session)
     finals, stop = [], threading.Event()
     try:

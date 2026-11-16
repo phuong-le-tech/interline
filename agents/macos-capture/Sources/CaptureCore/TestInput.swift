@@ -82,7 +82,7 @@ public struct WavFile {
     private static func decode(_ pcm: ArraySlice<UInt8>, format: (tag: Int, channels: Int, rate: Int, bits: Int),
                                fail: (String) -> ProtocolValidationError) throws -> [Float] {
         let width = format.bits / 8
-        guard width >= 1, pcm.count >= 0 else { throw fail("unsupported sample width") }
+        guard width >= 1, pcm.count >= width * format.channels else { throw fail("unsupported sample width") }
         let count = pcm.count / (width * format.channels) * format.channels
         var out = [Float](repeating: 0, count: count)
         let base = pcm.startIndex

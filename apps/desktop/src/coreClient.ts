@@ -30,6 +30,7 @@ export type ModelView = {
 
 const ENDPOINT_POLL_MS = 200;
 const RECONNECT_MS = 1000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 export function inTauri(): boolean {
   return '__TAURI_INTERNALS__' in window;
@@ -74,7 +75,8 @@ export class CoreClient {
   }
 
   private async json<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(this.url(path), { ...init, headers: { ...this.headers(), ...init?.headers } });
+    const signal = init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const response = await fetch(this.url(path), { ...init, signal, headers: { ...this.headers(), ...init?.headers } });
     if (!response.ok) {
       const problem = (await response.json().catch(() => ({}))) as { detail?: string; code?: string };
       throw Object.assign(new Error(problem.detail ?? `HTTP ${response.status}`), { code: problem.code });
