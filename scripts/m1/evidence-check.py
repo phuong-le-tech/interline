@@ -12,6 +12,7 @@ import statistics
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,7 +48,9 @@ def catalog(path):
     for row in entries:
         identifier = row["id"]
         url = row["url"]
-        if not re.fullmatch(r"https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", url):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != "https" or parsed.netloc != "huggingface.co" or \
+           not re.fullmatch(r"/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", parsed.path):
             raise AssertionError(f"AC8_catalog_{identifier}: URL must pin a full HF commit")
         request = urllib.request.Request(url, method="HEAD")
         # The original response carries x-linked-*; do not follow a redirect to a signed blob.

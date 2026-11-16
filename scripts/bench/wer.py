@@ -10,34 +10,20 @@ import json
 import pathlib
 import re
 import sys
-import tempfile
 import unicodedata
 
 WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*", re.UNICODE)
-
-
-def _allowed_roots() -> list[pathlib.Path]:
-    roots = [pathlib.Path.cwd(), pathlib.Path.home()]
-    tmp = pathlib.Path("/tmp").resolve()
-    if tmp not in roots:
-        roots.append(tmp)
-    try:
-        tmpdir = pathlib.Path(tempfile.gettempdir()).resolve()
-        if tmpdir not in roots:
-            roots.append(tmpdir)
-    except (OSError, RuntimeError):
-        pass
-    return roots
 
 
 def _existing_file(path: str) -> pathlib.Path:
     if "\x00" in path:
         raise SystemExit(f"invalid path: {path}")
     p = pathlib.Path(path).resolve()
+    roots = (pathlib.Path.cwd(), pathlib.Path.home())
     if not p.is_file():
         raise SystemExit(f"not a file: {path}")
-    if not any(p == root or p.is_relative_to(root) for root in _allowed_roots()):
-        raise SystemExit(f"path is outside allowed directories: {path}")
+    if not any(p == root or p.is_relative_to(root) for root in roots):
+        raise SystemExit(f"file must be under home or current directory: {path}")
     return p
 
 

@@ -9,7 +9,6 @@ import json
 import pathlib
 import re
 import sys
-import tempfile
 import urllib.request
 
 CATALOG = pathlib.Path(__file__).resolve().parents[2] / "services/core/app/src/main/resources/models/catalog.json"
@@ -19,31 +18,15 @@ _URL_RE = re.compile(r"^https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _allowed_roots() -> list[pathlib.Path]:
-    roots = [pathlib.Path.cwd(), pathlib.Path.home()]
-    tmp = pathlib.Path("/tmp").resolve()
-    if tmp not in roots:
-        roots.append(tmp)
-    try:
-        tmpdir = pathlib.Path(tempfile.gettempdir()).resolve()
-        if tmpdir not in roots:
-            roots.append(tmpdir)
-    except (OSError, RuntimeError):
-        pass
-    return roots
-
-
-def _inside_any(path: pathlib.Path) -> pathlib.Path:
-    resolved = path.resolve()
-    if any(resolved == root or resolved.is_relative_to(root) for root in _allowed_roots()):
-        return resolved
-    raise SystemExit(f"path is outside allowed directories: {path}")
-
-
 def _safe_dir(path: str) -> pathlib.Path:
     if "\x00" in path:
         raise SystemExit(f"invalid path: {path}")
-    return _inside_any(pathlib.Path(path))
+    p = pathlib.Path(path).resolve()
+    roots = (pathlib.Path.cwd(), pathlib.Path.home())
+    if not any(p == root or p.is_relative_to(root) for root in roots):
+        raise SystemExit(f"destination must be under home or current directory: {path}")
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def _safe_file_name(name: str) -> str:
