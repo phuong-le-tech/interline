@@ -52,7 +52,8 @@ def catalog(path):
         if parsed.scheme != "https" or parsed.netloc != "huggingface.co" or \
            not re.fullmatch(r"/[^/]+/[^/]+/resolve/[0-9a-f]{40}/[^?#]+", parsed.path):
             raise AssertionError(f"AC8_catalog_{identifier}: URL must pin a full HF commit")
-        request = urllib.request.Request(url, method="HEAD")
+        safe_url = urllib.parse.urlunparse(("https", "huggingface.co", parsed.path, "", "", ""))
+        request = urllib.request.Request(safe_url, method="HEAD")
         # The original response carries x-linked-*; do not follow a redirect to a signed blob.
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, headers, newurl):

@@ -67,7 +67,8 @@ export class CoreClient {
   constructor(private readonly endpoint: Endpoint) {}
 
   private url(path: string): string {
-    if (!path.startsWith('/') || path.includes('..')) {
+    const allowed = /^\/(recording\/(start|stop)|meetings|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+    if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }
     return `http://127.0.0.1:${this.endpoint.port}/api/v1${path}`;
