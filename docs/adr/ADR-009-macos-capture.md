@@ -54,11 +54,18 @@ is bound to the default output device; the agent restarts the microphone on `AVA
 but does not rebuild the tap on that path. Not investigated further in M1: a device-reconfiguration rewrite does
 not belong in this PR. Follow-up card with the evidence (`c_off` 4 rows, `c_on` 0 rows, same session).
 
-**What the UI does with a suppressed row.** The public transcript (`GET` transcript) excludes suppressed rows
-(`suppressed = 0` filter); they stay in the database. The live panel, however, applies `stt.final` from SSE as
-it arrives and no event announces the suppression, so a mirrored Me row is visible live until the transcript is
-reloaded. This explains the answer `c_mic_echo_visible_off=yes` against 0 visible rows in the database: the
-observer saw the live row. It is a live-display gap, not a storage defect; follow-up card.
+**What the UI does with a suppressed row.** Finding at the sitting: the public transcript (`GET` transcript)
+excludes suppressed rows (`suppressed = 0` filter) and they stay in the database, but the live panel applied
+`stt.final` from SSE as it arrived and no event announced the suppression, so a mirrored Me row stayed visible live
+until the transcript was reloaded. That explained the answer `c_mic_echo_visible_off=yes` against 0 visible rows in
+the database: a live-display gap, not a storage defect.
+
+**Closed by `transcript.suppressed`.** After the `stt.final` of a segment, the core publishes
+`transcript.suppressed` `{meetingId, stream: "mic", seg}` for every mic final the dedup flags, in both delivery
+orders: a mic final that repeats a system final is announced right after itself, and a system final that mirrors an
+already stored mic final announces that earlier segment. The live panel removes the row of that `stream:seg` key and
+remembers it, so a later partial or final on the same key cannot bring the row back. The event is additive and the
+public transcript is unchanged.
 
 ### 3. whisper.cpp packaging
 
@@ -112,5 +119,5 @@ place for it. No code was written.
 
 ## Pending after the sitting
 
-The spike items are filled. Left: the open gates above, the two follow-ups (voice processing kills the system
-stream; live panel shows a suppressed echo row), and Phuong's acceptance of this ADR.
+The spike items are filled. Left: the open gates above, one follow-up (voice processing kills the system stream),
+and Phuong's acceptance of this ADR.
