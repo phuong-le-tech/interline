@@ -52,7 +52,7 @@ def main(argv):
         return 2
     launcher = load_launcher()
     models = pathlib.Path(argv[1]).resolve()
-    session = pathlib.Path(argv[2]).resolve() if len(argv) > 2 else launcher.DEFAULT_SESSION
+    session = pathlib.Path(argv[2]).resolve() if len(argv) > 2 else launcher.ROOT / "fixtures/speech/short-system.wav"
     if not session.is_file():
         raise SystemExit(f"not a file: {session}")
     with wave.open(str(session), "rb") as source:
