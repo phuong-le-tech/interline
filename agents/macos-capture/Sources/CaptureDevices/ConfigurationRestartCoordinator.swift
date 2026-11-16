@@ -70,16 +70,53 @@ public final class ConfigurationRestartCoordinator {
 
     /// First start: ducking configuration first when voice processing is on, then the mic, then the tap.
     public func start(voiceProcessing: Bool) throws {
-        // TODO(voice-processing tap fix): code-writer implements the start sequence.
+        self.voiceProcessing = voiceProcessing
+        running = true
+        if voiceProcessing {
+            source.setOtherAudioDucking(.disabled)
+        }
+        try source.startMicrophone(voiceProcessing: voiceProcessing)
+        do {
+            try source.startSystemTap()
+        } catch {
+            onFailure(StreamID.system, "\(error)")
+        }
     }
 
     /// `AVAudioEngineConfigurationChange`: restart the mic, then rebuild the tap, at most once per window.
     public func configurationChanged() {
-        // TODO(voice-processing tap fix): code-writer implements the coalesced restart.
+        guard running else { return }
+        let now = clock()
+        if let last = lastRebuildMS, now - last < Self.coalescingWindowMS {
+            return
+        }
+        lastRebuildMS = now
+        rebuild()
     }
 
     /// Stops both sources; later configuration changes are ignored.
     public func stop() {
-        // TODO(voice-processing tap fix): code-writer implements the stop.
+        guard running else { return }
+        running = false
+        source.stopMicrophone()
+        source.stopSystemTap()
+    }
+
+    private func rebuild() {
+        source.stopMicrophone()
+        do {
+            try source.startMicrophone(voiceProcessing: voiceProcessing)
+            onDeviceChanged(StreamID.mic)
+        } catch {
+            onFailure(StreamID.mic, "\(error)")
+            return
+        }
+        source.stopSystemTap()
+        do {
+            try source.startSystemTap()
+            onDeviceChanged(StreamID.system)
+        } catch {
+            onFailure(StreamID.system, "\(error)")
+        }
     }
 }
