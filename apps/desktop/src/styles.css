@@ -1,0 +1,57 @@
+/* Functional and rough on purpose: DESIGN-SYSTEM polish is M2. Brick is reserved for live recording. */
+:root {
+  --signal: #a6402f;
+  --muted: #5c5c5c;
+  font-family: system-ui, sans-serif;
+}
+
+.recording-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 2px solid transparent;
+}
+
+.recording-bar.live {
+  border-bottom-color: var(--signal);
+}
+
+.meter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+[role='meter'],
+[role='progressbar'] {
+  width: 8rem;
+  height: 0.5rem;
+  background: #e4e4e4;
+}
+
+.bar-fill {
+  height: 100%;
+  background: #333;
+}
+
+.live .bar-fill {
+  background: var(--signal);
+}
+
+li.partial {
+  color: var(--muted);
+}
+
+[role='alert'] {
+  border-left: 3px solid #333;
+  padding-left: 0.5rem;
+}
+
+/* Smoothing only for people who have not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .bar-fill {
+    transition: width 80ms linear;
+  }
+}

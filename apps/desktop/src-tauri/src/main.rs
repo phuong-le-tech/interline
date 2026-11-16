@@ -5,11 +5,24 @@
 mod supervisor;
 
 use std::sync::Mutex;
+use std::process::Command;
 use supervisor::{Core, Endpoint};
 use tauri::{Manager, RunEvent, State};
 
+/// The only URL scheme the UI may ask the shell to open: the macOS privacy panes.
+const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
+
 /// The running core, or the reason it could not start.
 struct CoreState(Mutex<Result<Core, String>>);
+
+#[tauri::command]
+fn open_system_settings(uri: String) -> Result<(), String> {
+    if !uri.starts_with(SETTINGS_SCHEME) {
+        return Err("only System Settings links can be opened".to_string());
+    }
+    // `--` stops a crafted value from being read as an option.
+    Command::new("/usr/bin/open").arg("--").arg(&uri).status().map(|_| ()).map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 fn get_core_endpoint(state: State<CoreState>) -> Result<Endpoint, String> {
@@ -22,7 +35,7 @@ fn get_core_endpoint(state: State<CoreState>) -> Result<Endpoint, String> {
 fn main() {
     let app = tauri::Builder::default()
         .manage(CoreState(Mutex::new(Err("core is starting".to_string()))))
-        .invoke_handler(tauri::generate_handler![get_core_endpoint])
+        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let log_dir = app.path().app_log_dir()?;

@@ -201,7 +201,7 @@ Negotiation: the core picks the highest major present in both ranges. No overlap
   "device":{"name":"AirPods Pro","sample_rate":48000,"channels":2},"discontinuity_at_sample":4800000}}
 {"t":"permission.denied","body":{"permission":"system_audio","detection":"silent_stream",
   "evidence":"5 s of exact zeros while another process produces output","can_prompt_again":false,
-  "settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"}}
+  "settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"}}
 ```
 `detection` is `explicit` (API returned denied) or `silent_stream` (macOS process taps return zeros when denied, there is no error). `settings_uri` is opaque to the core: it is passed as is to the UI, which asks the shell to open it. The exact macOS anchor is [to verify].
 
@@ -225,7 +225,7 @@ Codes: `bad_frame`, `unsupported_message`, `protocol_version_unsupported`, `inva
 ```
 `session.started` returns `t0_wall_ms`, the devices in use, and the permission state seen at start.
 
-**Spool (the rescue WAV).** Every captured frame is written by the agent to `spool_dir/<stream>-<n>.wav` (16 kHz mono, 60 s files, header size rewritten every second, readers tolerate a stale header) **before** it is sent. Spool files whose frames are all acked are deleted. The spool is the agent's only state; the core's chunk files are the source of truth.
+**Spool (the rescue WAV).** Every captured frame is written by the agent to `spool_dir/<stream>-<firstSeq>-<firstSample>.wav` (16 kHz mono s16le, at most 60 s per file, frames contiguous inside a file so a discontinuity opens a new file, header size rewritten every second; readers take `seq` and `first_sample` from the file name and tolerate a stale header) **before** it is sent. Spool files whose frames are all acked are deleted. The spool is the agent's only state; the core's chunk files are the source of truth.
 
 **Core side.** Received frames are appended to `audio/<meeting>/<stream>/<n>.pcm` (10 s chunk files, fsync per chunk boundary or every 1 s), then acked. Meeting state, transcript segments and the `stt_done_until_sample` watermark per stream are in SQLite.
 
@@ -589,7 +589,7 @@ interline/
                                SpeechWhisper, CalendarMac, SecretsMac; Tests/
     windows-capture/README.md  contract + planned APIs, no code
     linux-capture/README.md    contract + planned APIs, no code
-  protocol/agent/v1/           schema.json, golden/*.ndjson + *.bin, CHANGELOG.md
+  protocol/agent/v1/           schema.json, golden/m0.ndjson, golden/m1/m1.ndjson + *.bin, CHANGELOG.md
   fixtures/
     audio/                     short WAVs (stereo mic|system) + scripted transcripts, CC0 or self-recorded
     meetings/                  5 anonymised golden meetings (enhancement evaluation)
@@ -650,9 +650,9 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | Maven | 3.9.x via Wrapper | verified |
 | Tauri | 2.12.5 (Rust crate and `@tauri-apps/cli` 2.x) | verified |
 | Tauri plugins (updater, notification, dialog) | not used in M0 | out of scope |
-| whisper.cpp | not used in M0 | Swift agent out of scope |
-| Silero VAD (ggml) | not used in M0 | deferred to M1 |
-| Swift toolchain / Xcode | not used in M0 | deferred to M1 |
+| whisper.cpp | v1.9.5, official `whisper-b5454-xcframework` (Metal embedded) | verified at M1 on Apple M4: links and runs with Command Line Tools only; SwiftPM URL download stalls on this network, see agents/macos-capture/README.md |
+| Silero VAD (ggml) | `ggml-silero-v6.2.0.bin` (885 098 B) | verified at M1: used through whisper.cpp VAD, catalog sha256 checked against Hugging Face |
+| Swift toolchain / Xcode | Swift 6.4.2, swift-tools 6.0, Command Line Tools only | verified at M1: `swift build` works, `swift test` does not (no XCTest, no swift-testing), so unit tests live in `CaptureSelfTest` |
 | React / TypeScript / Vite | 19 / 5.7.3 / 6.4.6 | verified |
 | TipTap / Tailwind CSS / shadcn/ui | not used in M0 | UI is unstyled in M0 |
 
@@ -664,10 +664,10 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | ADR-002 | Capture agent contract (Agent Protocol v1 over stdio) | Accepted |
 | ADR-003 | Platform ports, no OS leak, adding an OS | Accepted |
 | ADR-004 | macOS distribution without the Apple Developer Program (self-signed identity, install script) | Proposed (Accepted after the M1 spike) |
+| ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, AEC, whisper packaging, test input, compression | [Draft](docs/adr/ADR-009-macos-capture.md) (spikes pending the M1 sitting) |
 | ADR-005 | Note blocks with time anchors and the enhancement contract | To write (M2) |
 | ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | To write (M2) |
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
 | ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
-| ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, 14.2 minimum | To write (M1) |
 | ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
 | ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL) | [Accepted](docs/adr/ADR-011-core-owns-the-data.md) |

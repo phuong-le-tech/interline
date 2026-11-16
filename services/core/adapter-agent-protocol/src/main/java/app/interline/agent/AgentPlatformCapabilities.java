@@ -6,6 +6,7 @@ import app.interline.domain.AudioFrame;
 import app.interline.domain.CaptureListener;
 import app.interline.domain.CaptureRequest;
 import app.interline.domain.FinalSegment;
+import app.interline.domain.PartialSegment;
 import app.interline.domain.PlatformCapabilities;
 import app.interline.domain.ResumeState;
 import app.interline.domain.StreamKind;
@@ -38,6 +39,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private static final System.Logger LOG = System.getLogger(AgentPlatformCapabilities.class.getName());
     private static final int PROTOCOL = 1;
     private static final int WINDOW_FRAMES = 50;
+    private static final java.util.Set<String> DISPLAY_ONLY = java.util.Set.of("level", "stt.partial", "heartbeat");
+    private static final String DEFAULT_LANGUAGE = "fr";
     private static final int MAX_BATCH_FRAMES = 32;
     private static final Duration POLL_PERIOD = Duration.ofMillis(20);
     private static final Duration READER_JOIN = Duration.ofSeconds(2);
@@ -50,6 +53,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private final CaptureListener listener;
     private final AtomicInteger requestCounter = new AtomicInteger();
     private final Map<String, String> pendingStarts = new ConcurrentHashMap<>();
+    private final Map<String, String> pendingImports = new ConcurrentHashMap<>();
     private volatile Link link;
     private volatile boolean terminated;
     private volatile CountDownLatch shutdownAcknowledged = new CountDownLatch(0);
@@ -149,7 +153,10 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         } finally {
             source.ready = false;
             flush(batch);
-            if (!terminated) listener.agentLost(reason);
+            if (!terminated) {
+                supervisor.outputClosed(source.process);
+                listener.agentLost(reason);
+            }
         }
     }
 
@@ -161,7 +168,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             return;
         }
         ControlMessage message = (ControlMessage) inbound;
-        flush(batch);
+        // Meters and partials are display-only: flushing for each of them would cost one fsync per tick.
+        if (!DISPLAY_ONLY.contains(message.type())) flush(batch);
         try {
             dispatch(message);
         } catch (RuntimeException e) {
@@ -175,22 +183,42 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             case "heartbeat" -> supervisor.heartbeatReceived();
             case "session.started" -> {
                 pendingStarts.remove(message.replyTo());
-                listener.sessionStarted(body.path("session_id").asText());
+                listener.sessionStarted(body.path("session_id").asText(), body.path("t0_wall_ms").asLong(-1));
             }
             case "stt.final" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
-                    listener.finalSegment(new FinalSegment(stream, body.path("seg").asText(),
-                            body.path("start_sample").asLong(), body.path("end_sample").asLong(),
-                            body.path("text").asText(), body.path("model").asText("unknown"),
-                            body.hasNonNull("avg_logprob") ? body.path("avg_logprob").asDouble() : null)));
+                    onFinal(body, stream));
             case "session.stopped" -> listener.sessionStopped(body.path("session_id").asText());
+            case "level" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.level(body.path("session_id").asText(), stream, body.path("rms").asDouble()));
+            case "stt.partial" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.partialSegment(body.path("session_id").asText(), new PartialSegment(stream,
+                            body.path("seg").asText(), body.path("rev").asLong(), body.path("start_sample").asLong(),
+                            body.path("text").asText())));
+            case "device.changed" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
+                    listener.deviceChanged(body.path("session_id").asText(), stream,
+                            body.path("device").asText(""), body.path("at_sample").asLong()));
+            case "permission.denied" -> listener.permissionDenied(body.path("session_id").asText(null),
+                    body.path("permission").asText(), body.path("detection").asText(), body.path("settings_uri").asText());
+            case "transcribe.file.done" -> {
+                String jobId = body.path("job_id").asText();
+                pendingImports.remove(jobId);
+                listener.importFinished(jobId, body.path("segments").asInt());
+            }
             case "shutdown.ok" -> shutdownAcknowledged.countDown();
             case "error" -> onError(message);
-            default -> { /* vad.segment and unknown events carry nothing the core persists in M0 */ }
+            default -> { /* vad.segment and unknown events carry nothing the core persists */ }
         }
     }
 
     private void onError(ControlMessage message) {
         JsonNode body = message.body();
+        for (var pending : pendingImports.entrySet()) {
+            if (pending.getValue().equals(message.replyTo())) {
+                pendingImports.remove(pending.getKey());
+                listener.importFailed(pending.getKey(), body.path("code").asText("internal"), body.path("message").asText(""));
+                return;
+            }
+        }
         String sessionId = pendingStarts.remove(message.replyTo());
         if (sessionId == null) sessionId = body.path("session_id").asText(null);
         String code = body.path("code").asText("internal");
@@ -202,7 +230,10 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
 
     private static AgentInfo agentInfo(ControlMessage hello) {
         JsonNode agent = hello.body().path("agent");
-        return new AgentInfo(agent.path("name").asText("unknown"), agent.path("version").asText("unknown"), PROTOCOL);
+        JsonNode capabilities = hello.body().path("capabilities");
+        return new AgentInfo(agent.path("name").asText("unknown"), agent.path("version").asText("unknown"), PROTOCOL,
+                capabilities.path("capture").path("aec").asBoolean(false),
+                capabilities.path("stt").path("engine").asText("none"));
     }
 
     private void flush(List<AudioFrame> batch) {
@@ -213,6 +244,35 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             listener.audio(frames);
         } catch (RuntimeException e) {
             LOG.log(System.Logger.Level.ERROR, "audio batch rejected", e);
+        }
+    }
+
+    private void onFinal(JsonNode body, StreamKind stream) {
+        FinalSegment segment = new FinalSegment(stream, body.path("seg").asText(),
+                body.path("start_sample").asLong(), body.path("end_sample").asLong(),
+                body.path("text").asText(), body.path("model").asText("unknown"),
+                body.hasNonNull("avg_logprob") ? body.path("avg_logprob").asDouble() : null);
+        String sessionId = body.path("session_id").asText();
+        if (pendingImports.containsKey(sessionId)) listener.importedSegment(sessionId, segment);
+        else listener.finalSegment(segment);
+    }
+
+    @Override public void transcribeFile(String jobId, String path, StreamKind stream) {
+        Link current = link;
+        if (current == null || !current.ready) {
+            listener.importFailed(jobId, "agent_unavailable", "The capture agent is not connected");
+            return;
+        }
+        String id = nextRequestId();
+        pendingImports.put(jobId, id);
+        ObjectNode body = ControlMessage.nodes().objectNode().put("job_id", jobId).put("path", path)
+                .put("stream", stream.wireName());
+        body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        try {
+            current.connection.send(ControlMessage.request(id, "transcribe.file", body));
+        } catch (IOException e) {
+            pendingImports.remove(jobId);
+            listener.importFailed(jobId, "agent_unavailable", "The capture agent did not accept the request");
         }
     }
 
@@ -293,7 +353,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         body.putObject("audio").put("sample_rate", 16000).put("format", "s16le").put("channels", 1)
                 .put("chunk_ms", 100).put("window", WINDOW_FRAMES);
         body.put("spool_dir", request.spoolDir());
-        body.putObject("stt").put("language", "fr");
+        var stt = body.putObject("stt").put("language", DEFAULT_LANGUAGE);
+        if (request.modelPath() != null) stt.put("model_path", request.modelPath());
+        if (request.vadModelPath() != null) stt.put("vad_model_path", request.vadModelPath());
         ResumeState resume = request.resume();
         if (resume == null) {
             body.putNull("resume");

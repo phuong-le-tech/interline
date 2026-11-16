@@ -32,6 +32,7 @@ public final class AgentProcess implements AutoCloseable {
     private Instant restartAt;
     private boolean unavailable;
     private boolean heartbeatSeen;
+    private boolean outputClosed;
     private boolean closed;
 
     public AgentProcess(Process process, Supplier<Process> restart, Clock clock) {
@@ -55,6 +56,15 @@ public final class AgentProcess implements AutoCloseable {
         heartbeatSeen = true;
     }
 
+    /**
+     * The agent's stdout reached end of stream. The link is dead whatever the process does next (a launcher
+     * wrapper can linger for seconds after its child is killed), so the next poll treats it as exited and
+     * reaps the whole tree instead of waiting for the process to vanish on its own.
+     */
+    public synchronized void outputClosed(Process source) {
+        if (source == process) outputClosed = true;
+    }
+
     public synchronized boolean isUnavailable() { return unavailable; }
 
     public void poll() {
@@ -72,6 +82,10 @@ public final class AgentProcess implements AutoCloseable {
         if (process == null) {
             return now.isBefore(restartAt) ? NO_NOTIFICATION : relaunch(now);
         }
+        if (outputClosed) {
+            ProcessTree.destroy(process);
+            return onExit("agent_exited", now);
+        }
         if (!process.isAlive()) return onExit("agent_exited", now);
         if (Duration.between(lastHeartbeat, now).compareTo(heartbeatSeen ? deadline : deadline.plus(startupGrace)) >= 0) {
             ProcessTree.destroy(process);
@@ -85,6 +99,7 @@ public final class AgentProcess implements AutoCloseable {
             process = restart.get();
             lastHeartbeat = now;
             heartbeatSeen = false;
+            outputClosed = false;
             Process launched = process;
             return () -> listener.restarted(launched);
         } catch (RuntimeException launchFailure) {

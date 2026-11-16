@@ -66,13 +66,14 @@ public final class FrameCodec {
             throw new BadFrameException("control payload is not an envelope with a type");
         }
         JsonNode body = root.path("body");
+        if (!body.isObject()) throw new BadFrameException("control payload has no body object");
         return new ControlMessage(
                 root.path("v").asInt(ControlMessage.ENVELOPE_VERSION),
                 root.path("t").asText(),
                 root.hasNonNull("id") ? root.path("id").asText() : null,
                 root.hasNonNull("re") ? root.path("re").asText() : null,
                 root.path("ts").asLong(0),
-                body.isObject() ? body : ControlMessage.nodes().objectNode());
+                body);
     }
 
     public byte[] encodeControl(ControlMessage message) throws IOException {

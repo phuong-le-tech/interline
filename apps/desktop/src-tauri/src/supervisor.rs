@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -92,7 +92,19 @@ fn ready_port(line: &str) -> Option<u16> {
     value["port"].as_u64().and_then(|p| u16::try_from(p).ok())
 }
 
-/// Development launch: the built core jar with the MockAgent at real-time speed. Bundled runtimes arrive in M5.
+/// Origin the webview of a built (not `tauri dev`) app is served from.
+const BUNDLE_ORIGIN: &str = "tauri://localhost";
+const SIDECAR_AGENT: &str = "interline-capture-macos";
+
+/// The capture agent bundled next to this executable (Tauri `externalBin`), if any.
+fn sidecar_agent() -> Option<PathBuf> {
+    let agent = std::env::current_exe().ok()?.parent()?.join(SIDECAR_AGENT);
+    agent.is_file().then_some(agent)
+}
+
+/// Development launch: the built core jar, with the bundled capture agent when present and the MockAgent at
+/// real-time speed otherwise. The agent stays a grandchild of the shell (shell -> JVM -> agent), which is the
+/// process chain macOS attributes its permissions to. Bundled runtimes arrive in M5.
 fn command(data_dir: &Path, log_dir: &Path) -> Result<Command, String> {
     if !cfg!(debug_assertions) {
         return Err("only the development launch exists in M0".to_string());
@@ -106,10 +118,19 @@ fn command(data_dir: &Path, log_dir: &Path) -> Result<Command, String> {
     java.arg("-jar")
         .arg(jar)
         .arg(format!("--data-dir={}", data_dir.display()))
-        .arg(format!("--log-dir={}", log_dir.display()))
-        .arg(format!("--agent={}", repo.join("services/core/mock-agent/bin/mock-agent").display()))
-        .arg("--agent-arg=--speed=1")
-        .arg("--parent=stdio")
-        .arg(format!("--allow-origin={DEV_ORIGIN}"));
+        .arg(format!("--log-dir={}", log_dir.display()));
+    match sidecar_agent() {
+        Some(agent) => java.arg(format!("--agent={}", agent.display())),
+        None => java
+            .arg(format!("--agent={}", repo.join("services/core/mock-agent/bin/mock-agent").display()))
+            .arg("--agent-arg=--speed=1"),
+    };
+    // Development switch for agent flags such as `--voice-processing` (used by scripts/m1/human-gate.sh).
+    for flag in std::env::var("INTERLINE_AGENT_ARGS").unwrap_or_default().split_whitespace() {
+        java.arg(format!("--agent-arg={flag}"));
+    }
+    java.arg("--parent=stdio")
+        .arg(format!("--allow-origin={DEV_ORIGIN}"))
+        .arg(format!("--allow-origin={BUNDLE_ORIGIN}"));
     Ok(java)
 }

@@ -52,3 +52,15 @@ GEMINI.md
 .aider*
 .github/copilot-instructions.md
 .windsurf/
+
+# Swift / speech fixtures (never commit audio)
+.build/
+.swiftpm/
+fixtures/**/*.wav
+fixtures/**/*.aiff
+fixtures/**/*.caf
+*.p12
+*.keychain-db
+.whisper/
+!services/core/app/src/main/resources/models/
+!services/core/app/src/main/resources/models/catalog.json

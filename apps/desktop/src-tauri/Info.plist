@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.2</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Interline records your voice to transcribe the meeting on this Mac. Audio never leaves your computer.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Interline records the other participants' audio to transcribe the meeting on this Mac. Audio never leaves your computer.</string>
+</dict>
+</plist>

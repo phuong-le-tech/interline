@@ -25,9 +25,24 @@ class CoreConfiguration {
         return new DurableCaptureIngest(properties.dataDir());
     }
 
+    /** Repairs meetings left recording by a crash before anything can start a new one. */
+    @Bean OrphanRecovery orphanRecovery(DurableCaptureIngest ingest, InterlineProperties properties) {
+        OrphanRecovery recovery = new OrphanRecovery(ingest, properties.dataDir());
+        recovery.run();
+        return recovery;
+    }
+
     @Bean RecordingService recordingService(DurableCaptureIngest ingest, EventBus events, Clock clock,
-                                            InterlineProperties properties) {
-        return new RecordingService(ingest, events, clock, properties.dataDir());
+                                            InterlineProperties properties, OrphanRecovery recovery, ModelService models) {
+        RecordingService service = new RecordingService(ingest, events, clock, properties.dataDir(), recovery,
+                SpeechModels.overriddenBy(properties.agentArgs(), models));
+        ingest.useAecSource(() -> properties.echo().aec() != null ? properties.echo().aec() : service.agentCancelsEcho());
+        return service;
+    }
+
+    @Bean(destroyMethod = "close")
+    ModelService modelService(InterlineProperties properties, EventBus events) {
+        return new ModelService(properties.models().catalog(), properties.dataDir(), events);
     }
 
     @Bean String coreVersion(ObjectProvider<BuildProperties> build) {
@@ -37,7 +52,7 @@ class CoreConfiguration {
 
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
-                                          String coreVersion) {
+                                          String coreVersion, ModelService models) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -48,6 +63,7 @@ class CoreConfiguration {
                 command.add("--protocol=1");
                 command.add("--log-level=info");
                 command.addAll(properties.agentArgs());
+                if (command.stream().noneMatch(arg -> arg.startsWith("--model="))) command.addAll(models.agentArguments());
                 capture = new AgentPlatformCapabilities(new AgentPlatformCapabilities.Config(command,
                         properties.logDir().resolve("agent.log"), properties.agentHeartbeatInterval(), coreVersion),
                         clock, recording);

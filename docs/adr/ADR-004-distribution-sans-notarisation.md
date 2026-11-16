@@ -90,3 +90,52 @@ Certificate rotation (expiry or leak): new identity = one new permission prompt 
 ## Spike results (M1)
 
 To be filled by the M1 spike "confirm on a real Mac which install path keeps the microphone and system-audio permissions across a rebuild". Matrix: signing (ad-hoc, ad-hoc with identifier DR, self-signed identity) x replacement path (install script, Tauri updater, tap cask, local `make install`). For each cell: after a rebuild with a code change, is there a new prompt for microphone, system audio, Keychain; is either stream silent (a silent system stream means the grant was lost, check with `level`); is there a Gatekeeper or App Management dialog. Reset between runs: `tccutil reset Microphone app.interline` and `tccutil reset AudioCapture app.interline` [to verify the service name].
+
+**Status after the first sitting (2026-11-15): PARTIAL. Only the identity matrix (d) is valid; (a), (b), (c) and (e) need one re-run.**
+Source: `~/Library/Application Support/app.interline.dev/m1-gate/results.json`, macOS 27.2.1 arm64.
+
+| Signing of the rebuilt app | Microphone asked again | System audio asked again | System stream silent |
+|---|---|---|---|
+| Self-signed identity "Interline Dev Signing", code change | no | no | no |
+| Ad-hoc, code change | yes | yes | yes |
+
+This confirms the premise of the recommendation (option 2): a stable self-signed identity keeps the TCC grants
+across a rebuild, an ad-hoc signature loses them and the system stream then goes silent (which the silent-stream
+detector must turn into the banner). It is one machine and one rebuild path (local `build-dev-app.sh`); the
+updater, install script and tap cells of the matrix stay open and belong to M4.
+
+Not valid and not used (the first sitting ran with no speech model installed, so no transcript existed):
+- (b) "Them text appeared: no" is explained by the missing model, not by a capture defect. Both level meters did
+  move, so the microphone and the tap delivered audio.
+- (c) the echo answers: with no speech engine no Me row could exist either way. Voice processing therefore stays
+  off by default: unmeasured, not refuted. No claim is made that echo cancellation works.
+- (a) the dialog names were not recorded (empty) and the Settings entry name was "idk". Attribution of the
+  prompts to `Interline.app` is therefore still unconfirmed. `tccutil reset ... app.interline.capture` exits 64
+  (usage error), which means that bundle id is not registered with TCC, consistent with the grant being held by
+  `app.interline.desktop` (its reset exits 0 after a grant); it is not a failing reset.
+- (e) the banner appeared 17 s after the Record click. That timer included the human answering both dialogs, so it
+  is not the detector latency; the script now starts the clock at the Deny click. The banner link was reported
+  missing; the settings URI anchor was `Privacy_AudioCapture` and is now `Privacy_ScreenCapture` (the pane that holds
+  "System Audio Recording Only"). Both are to be re-checked in the short re-run (`scripts/m1/human-gate.sh --rerun`).
+
+The `tccutil reset` service names (`Microphone`, `AudioCapture`) accepted by the OS: both services returned exit 0
+for `app.interline.desktop` after a grant.
+
+**Second sitting (2026-11-16, `human-gate.sh --rerun`): (a) holds on one piece of evidence, (b) holds at the data
+level, (c) and (e) are still open.**
+
+| Spike | What was measured | Reading |
+|---|---|---|
+| (a) attribution | The System Settings entry for the permissions is named `interline.app`. The two dialog-name fields were left empty. `tccutil reset` returns 0 for `app.interline.desktop` and 64 (bundle id not registered) for `app.interline.capture` | The grants are held by `Interline.app`, not by Java, the Terminal or the agent binary. The dialog texts themselves are not recorded: only the Settings entry backs this. Spike (a) is not failed, so no Unix-socket fallback is built |
+| (b) tap | Transcript rows for both streams in the database: Me 2, Them 1, with real text; both meters moved | Real device capture plus speech recognition works end to end on this Mac. "Text appeared: no" has an explained cause and no display defect was found: the core sends `language: "fr"` in `session.start` and English speech is decoded as French nonsense (reproduced headlessly), and the native Playwright spec shows the same rows in the window |
+| (c) echo | `c_off_rows_system = 0` after about 3 s of English `say`, then the sitting stopped | Not measured. Short utterances are not dropped by the pipeline (3 utterances of 3.2 s on the system channel give 3 finals, `scripts/m1/short-utterances-check.py`); the live cause of the empty system stream is unknown. The sitting is redesigned: French sentence, 15 s of speech, rows checked before the question |
+| (e) denial | Never ran: (c) aborted the whole sitting | Open. The script now runs each spike on its own and records an unmeasurable one as inconclusive |
+
+**Third sitting (2026-11-16, `--only c --only e`): (c) and (e) measured.**
+
+| Spike | What was measured | Reading |
+|---|---|---|
+| (e) denial | Banner 4.3 s after the Deny click, with the "Open System Settings" link, which opened Screen & System Audio Recording | Under the 10 s limit; the silent-stream detector works on real hardware |
+| (c) echo, voice processing off | 4 system rows, all with the sentence; 4 mirrored Me rows stored with `suppressed=1` | The text dedup at 70 % removes the echo without AEC |
+| (c) echo, voice processing on | 0 system rows, twice | The system stream dies; see ADR-009 section 2 |
+

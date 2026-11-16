@@ -16,10 +16,23 @@ export type TranscriptLine = {
 
 export type CoreEvent = { name: string; data: Record<string, unknown> };
 
+export type ModelState = 'absent' | 'partial' | 'downloading' | 'installed' | 'failed';
+
+export type ModelView = {
+  id: string;
+  name: string;
+  kind: string;
+  sizeBytes: number;
+  state: ModelState;
+  downloadedBytes: number;
+  error?: string;
+};
+
 const ENDPOINT_POLL_MS = 200;
 const RECONNECT_MS = 1000;
+const REQUEST_TIMEOUT_MS = 30000;
 
-function inTauri(): boolean {
+export function inTauri(): boolean {
   return '__TAURI_INTERNALS__' in window;
 }
 
@@ -54,6 +67,10 @@ export class CoreClient {
   constructor(private readonly endpoint: Endpoint) {}
 
   private url(path: string): string {
+    const allowed = /^\/(recording\/(start|stop)|meetings|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+    if (!allowed.test(path)) {
+      throw new Error(`invalid API path: ${path}`);
+    }
     return `http://127.0.0.1:${this.endpoint.port}/api/v1${path}`;
   }
 
@@ -62,10 +79,14 @@ export class CoreClient {
   }
 
   private async json<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(this.url(path), { ...init, headers: { ...this.headers(), ...init?.headers } });
+    const response = await fetch(this.url(path), {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { ...this.headers(), ...init?.headers },
+    });
     if (!response.ok) {
-      const problem = (await response.json().catch(() => ({}))) as { detail?: string };
-      throw new Error(problem.detail ?? `HTTP ${response.status}`);
+      const problem = (await response.json().catch(() => ({}))) as { detail?: string; code?: string };
+      throw Object.assign(new Error(problem.detail ?? `HTTP ${response.status}`), { code: problem.code });
     }
     return (await response.json()) as T;
   }
@@ -80,6 +101,15 @@ export class CoreClient {
 
   meetings(): Promise<Meeting[]> {
     return this.json('/meetings');
+  }
+
+  models(): Promise<ModelView[]> {
+    return this.json('/models');
+  }
+
+  /** The only call that makes the core fetch a model; nothing else downloads anything. */
+  downloadModel(id: string): Promise<unknown> {
+    return this.json(`/models/${encodeURIComponent(id)}/download`, { method: 'POST' });
   }
 
   /** EventSource cannot send an Authorization header, so the stream is read with fetch. */
