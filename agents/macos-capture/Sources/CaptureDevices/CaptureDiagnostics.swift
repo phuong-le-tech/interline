@@ -1,3 +1,4 @@
+import CaptureCore
 import CoreAudio
 import Foundation
 
@@ -22,6 +23,14 @@ public final class CaptureDiagnostics {
     private let clock: () -> Int
     private let sink: (String) -> Void
     private let intervalMS: Int
+    private let queue = DispatchQueue(label: "capture.diagnostics")
+    private var lastFlushMS: Int?
+    private var buckets: [UInt8: Bucket] = [:]
+
+    private struct Bucket {
+        var frames = 0
+        var peak = 0.0
+    }
 
     /// `clock` is a monotonic millisecond clock, injected so the self-test advances time instead of sleeping.
     public init(clock: @escaping () -> Int, sink: @escaping (String) -> Void,
@@ -32,24 +41,54 @@ public final class CaptureDiagnostics {
     }
 
     public func tapCreated(id: UInt32, device: String, format: String, status: OSStatus) {
-        // TODO(voice-processing tap fix): code-writer formats and emits the line.
+        sink(lifecycle(kind: "tap", action: "created", id: id, device: device, format: format, status: status))
     }
 
     public func tapDestroyed(id: UInt32, device: String, format: String, status: OSStatus) {
-        // TODO(voice-processing tap fix): code-writer formats and emits the line.
+        sink(lifecycle(kind: "tap", action: "destroyed", id: id, device: device, format: format, status: status))
     }
 
     public func aggregateCreated(id: UInt32, device: String, format: String, status: OSStatus) {
-        // TODO(voice-processing tap fix): code-writer formats and emits the line.
+        sink(lifecycle(kind: "aggregate", action: "created", id: id, device: device, format: format, status: status))
     }
 
     public func aggregateDestroyed(id: UInt32, device: String, format: String, status: OSStatus) {
-        // TODO(voice-processing tap fix): code-writer formats and emits the line.
+        sink(lifecycle(kind: "aggregate", action: "destroyed", id: id, device: device, format: format, status: status))
     }
 
     /// Counts frames and tracks the peak for one delivered buffer. Emits the per-stream stats line when the
     /// stats interval has elapsed. Callers pass levels, never samples.
     public func observe(stream: UInt8, frames: Int, peak: Double) {
-        // TODO(voice-processing tap fix): code-writer accumulates and flushes every statsIntervalMS.
+        queue.sync {
+            var bucket = buckets[stream] ?? Bucket()
+            bucket.frames += frames
+            bucket.peak = max(bucket.peak, peak)
+            buckets[stream] = bucket
+
+            let now = clock()
+            guard let last = lastFlushMS, now - last >= intervalMS else {
+                if lastFlushMS == nil { lastFlushMS = now }
+                return
+            }
+            flush(now: now)
+        }
+    }
+
+    private func flush(now: Int) {
+        for stream in [StreamID.mic, StreamID.system] {
+            guard let bucket = buckets[stream], bucket.frames > 0 else { continue }
+            sink("capture.stats stream=\(StreamID.name(stream)) window_ms=\(intervalMS) " +
+                 "frames=\(bucket.frames) peak=\(String(format: "%.3f", bucket.peak))")
+        }
+        buckets.removeAll()
+        lastFlushMS = now
+    }
+
+    private func lifecycle(kind: String, action: String, id: UInt32, device: String, format: String, status: OSStatus) -> String {
+        "capture.\(kind) \(action) id=\(id) device=\"\(escaped(device))\" format=\"\(escaped(format))\" status=\(status)"
+    }
+
+    private func escaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
