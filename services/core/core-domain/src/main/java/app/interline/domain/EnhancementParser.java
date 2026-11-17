@@ -7,15 +7,13 @@ import java.util.Map;
 
 /** Parses model output into an {@link EnhancementOutput}; no repair, no invented members. */
 public final class EnhancementParser {
-    private static final String FENCE = "```";
-
     private EnhancementParser() { }
 
     /** @throws InvalidEnhancementException when the text is not the contract's JSON document */
     public static EnhancementOutput parse(String json) {
         Object root;
         try {
-            root = MiniJson.parse(stripCodeFence(json == null ? "" : json));
+            root = MiniJson.parse(CodeFence.strip(json == null ? "" : json));
         } catch (IllegalArgumentException e) {
             throw new InvalidEnhancementException(e.getMessage());
         }
@@ -82,14 +80,5 @@ public final class EnhancementParser {
         if (value == null) return null;
         if (value instanceof String text) return text;
         throw new InvalidEnhancementException(key + " must be a string");
-    }
-
-    /** Some models wrap the document in a markdown fence even when told not to. */
-    private static String stripCodeFence(String raw) {
-        String trimmed = raw.strip();
-        if (!trimmed.startsWith(FENCE) || !trimmed.endsWith(FENCE) || trimmed.length() < 2 * FENCE.length()) return trimmed;
-        String inner = trimmed.substring(FENCE.length(), trimmed.length() - FENCE.length());
-        int firstLine = inner.indexOf('\n');
-        return (firstLine < 0 ? inner : inner.substring(firstLine + 1)).strip();
     }
 }
