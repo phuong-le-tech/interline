@@ -35,6 +35,7 @@ final class Agent {
     private let transport = StdioTransport()
     private let transcriber: Transcriber
     private let defaults: ModelDefaults
+    private let secrets = KeychainSecretStore()
     private var session: CaptureSession?
     private var heartbeat: DispatchSourceTimer?
     private var input: TestInput?
@@ -86,6 +87,7 @@ final class Agent {
         case "audio.ack": acknowledge(message)
         case "transcribe.file": importFile(message)
         case "permission.status", "permission.request": answerPermissions(message)
+        case "secret.get", "secret.put", "secret.delete": answerSecret(message)
         default:
             // Unknown requests are answered, unknown events are ignored (ARCHITECTURE 5.1).
             guard message.id != nil else { return }
@@ -161,6 +163,35 @@ final class Agent {
             } catch {
                 transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "\(error)", jobId)))
             }
+        }
+    }
+
+    /// Keychain access for provider API keys. Values travel only in the reply to `secret.get` and are never logged.
+    private func answerSecret(_ message: ControlMessage) {
+        guard message.id != nil else { return }
+        guard let account = message.body["account"] as? String, !account.isEmpty else {
+            transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "account is required")))
+            return
+        }
+        do {
+            switch message.type {
+            case "secret.put":
+                guard let value = message.body["value"] as? String else {
+                    transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "value is required")))
+                    return
+                }
+                try secrets.put(account: account, value: value)
+                transport.send(.response(to: message, type: message.type))
+            case "secret.delete":
+                try secrets.delete(account: account)
+                transport.send(.response(to: message, type: message.type))
+            default:
+                transport.send(.response(to: message, type: message.type, ["value": try secrets.get(account: account)]))
+            }
+        } catch SecretStoreError.notFound {
+            transport.send(.response(to: message, type: "error", errorBody("secret_not_found", "warn", "No secret for this account")))
+        } catch {
+            transport.send(.response(to: message, type: "error", errorBody("internal", "warn", "Keychain access failed")))
         }
     }
 
