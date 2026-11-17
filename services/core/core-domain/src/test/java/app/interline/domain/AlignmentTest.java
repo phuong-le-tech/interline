@@ -21,8 +21,8 @@ class AlignmentTest {
             "0,1000,FULL",
             "3000,1000,FULL",
             "3004,1000,WINDOWED",
-            "400000,100000,FULL",
-            "400004,100000,WINDOWED"})
+            "300000,100000,FULL",
+            "300004,100000,WINDOWED"})
     void AC10_modeSelection_fullUpToSeventyFivePercentOfContextThenWindowed(long chars, int context, EnhanceMode expected) {
         assertThat(ModeSelector.select(chars, context)).isEqualTo(expected);
     }
