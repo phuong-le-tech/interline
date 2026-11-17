@@ -66,6 +66,16 @@ public final class CaptureStore {
                 .params(status.dbValue(), nowMs, terminal, nowMs, meetingId).update());
     }
 
+    public void setLanguage(String meetingId, String language) {
+        database.write(db -> db.sql("UPDATE meetings SET language = ? WHERE id = ?")
+                .params(language, meetingId).update());
+    }
+
+    public String language(String meetingId) {
+        return database.read(db -> db.sql("SELECT language FROM meetings WHERE id = ?")
+                .param(meetingId).query(String.class).optional().orElse(null));
+    }
+
     /** Highest durable seq per stream across every run of the meeting, or -1 when none. */
     public long lastSeq(String meetingId, StreamKind stream) {
         String column = "last_seq_" + stream.wireName();

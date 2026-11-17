@@ -10,20 +10,39 @@ final class SystemTapSource {
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
+    private var tapDeviceName: String = ""
+    private var tapFormatDescription: String = ""
 
     var deviceName: String { AudioProperty.defaultDevice(input: false).map(AudioProperty.deviceName) ?? "System output" }
+
+    var onTapCreated: ((UInt32, String, String, OSStatus) -> Void)?
+    var onTapDestroyed: ((UInt32, String, String, OSStatus) -> Void)?
+    var onAggregateCreated: ((UInt32, String, String, OSStatus) -> Void)?
+    var onAggregateDestroyed: ((UInt32, String, String, OSStatus) -> Void)?
 
     func start(_ handler: @escaping (AVAudioPCMBuffer) -> Void) throws {
         guard let output = AudioProperty.defaultDevice(input: false),
               let outputUID = AudioProperty.string(output, kAudioDevicePropertyDeviceUID) else {
             throw CaptureDeviceError.unavailable("no default output device to tap")
         }
+        tapDeviceName = AudioProperty.deviceName(output)
         // An empty exclusion list taps every process; the stereo mixdown is what the STT needs.
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.name = "Interline system audio"
         description.isPrivate = true
         description.muteBehavior = .unmuted
-        try check(AudioHardwareCreateProcessTap(description, &tapID), "AudioHardwareCreateProcessTap")
+        let createTapStatus = AudioHardwareCreateProcessTap(description, &tapID)
+        try check(createTapStatus, "AudioHardwareCreateProcessTap")
+
+        var format = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        var formatAddress = AudioProperty.address(kAudioTapPropertyFormat)
+        try check(AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &format), "read tap format")
+        guard let tapFormat = AVAudioFormat(streamDescription: &format) else {
+            throw CaptureDeviceError.unavailable("the tap reports an unsupported audio format")
+        }
+        tapFormatDescription = "\(Int(tapFormat.sampleRate)) Hz, \(tapFormat.channelCount) ch"
+        onTapCreated?(UInt32(tapID), tapDeviceName, tapFormatDescription, createTapStatus)
 
         let aggregate: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Interline tap",
@@ -37,15 +56,10 @@ final class SystemTapSource {
                 kAudioSubTapUIDKey: description.uuid.uuidString,
             ]],
         ]
-        try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "AudioHardwareCreateAggregateDevice")
+        let createAggregateStatus = AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID)
+        try check(createAggregateStatus, "AudioHardwareCreateAggregateDevice")
+        onAggregateCreated?(UInt32(aggregateID), "Interline tap", tapFormatDescription, createAggregateStatus)
 
-        var format = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        var formatAddress = AudioProperty.address(kAudioTapPropertyFormat)
-        try check(AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &format), "read tap format")
-        guard let tapFormat = AVAudioFormat(streamDescription: &format) else {
-            throw CaptureDeviceError.unavailable("the tap reports an unsupported audio format")
-        }
         try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { _, input, _, _, _ in
             // The input list is only valid inside this callback, so the samples are copied out before it returns.
             guard let view = AVAudioPCMBuffer(pcmFormat: tapFormat, bufferListNoCopy: input, deallocator: nil),
@@ -62,8 +76,14 @@ final class SystemTapSource {
             AudioDeviceStop(aggregateID, procID)
             AudioDeviceDestroyIOProcID(aggregateID, procID)
         }
-        if aggregateID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggregateID) }
-        if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID) }
+        let destroyAggregateStatus = AudioHardwareDestroyAggregateDevice(aggregateID)
+        if aggregateID != kAudioObjectUnknown {
+            onAggregateDestroyed?(UInt32(aggregateID), "Interline tap", tapFormatDescription, destroyAggregateStatus)
+        }
+        let destroyTapStatus = AudioHardwareDestroyProcessTap(tapID)
+        if tapID != kAudioObjectUnknown {
+            onTapDestroyed?(UInt32(tapID), tapDeviceName, tapFormatDescription, destroyTapStatus)
+        }
         procID = nil
         aggregateID = AudioObjectID(kAudioObjectUnknown)
         tapID = AudioObjectID(kAudioObjectUnknown)

@@ -10,7 +10,7 @@ public interface AudioCapture {
     boolean acknowledge(StreamKind stream, long seq, int window);
 
     /** Ask the agent to transcribe an audio file offline; results arrive through the capture listener. */
-    void transcribeFile(String jobId, String path, StreamKind stream);
+    void transcribeFile(String jobId, String path, StreamKind stream, String language);
 
     /** Stop supervising and terminate the agent for good (no restart). */
     void terminate();

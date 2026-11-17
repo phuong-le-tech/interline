@@ -1,0 +1,15 @@
+{
+  "sample_rate": 16000,
+  "samples": 480000,
+  "segments": [
+    {"stream":"system","seg":"s-echo-1","start_sample":16000,"end_sample":48000,"text":"Il faut relancer le serveur avant la reunion."},
+    {"stream":"mic","seg":"m-echo-1","start_sample":16000,"end_sample":64000,"text":"Il faut relancer le serveur avant la reunion."},
+    {"stream":"mic","seg":"m-echo-2","start_sample":96000,"end_sample":128000,"text":"Nous verrons les chiffres demain matin."},
+    {"stream":"system","seg":"s-echo-2","start_sample":96000,"end_sample":144000,"text":"Nous verrons les chiffres demain matin."},
+    {"stream":"mic","seg":"m-solo","start_sample":176000,"end_sample":208000,"text":"Je vais envoyer le compte rendu ce soir."},
+    {"stream":"system","seg":"s-dup","start_sample":256000,"end_sample":288000,"text":"Le budget est valide pour ce trimestre."},
+    {"stream":"system","seg":"s-dup","start_sample":256000,"end_sample":288000,"text":"Le budget est valide pour ce trimestre."},
+    {"stream":"mic","seg":"m-dup","start_sample":256000,"end_sample":320000,"text":"Le budget est valide pour ce trimestre."},
+    {"stream":"mic","seg":"m-dup","start_sample":256000,"end_sample":320000,"text":"Le budget est valide pour ce trimestre."}
+  ]
+}
