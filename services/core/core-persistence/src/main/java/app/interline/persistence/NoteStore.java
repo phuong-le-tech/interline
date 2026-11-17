@@ -2,7 +2,10 @@ package app.interline.persistence;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -10,9 +13,11 @@ import java.util.Optional;
  * and only with a higher client rev (idempotent journal replay, last writer wins per block).
  */
 public final class NoteStore {
-    private static final String ORIGIN_USER = "user";
-    private static final String ORIGIN_AI = "ai";
-    private static final String STATE_EDITED = "edited";
+    static final String ORIGIN_USER = "user";
+    static final String ORIGIN_AI = "ai";
+    static final String STATE_PROPOSED = "proposed";
+    static final String STATE_ACCEPTED = "accepted";
+    static final String STATE_EDITED = "edited";
     private static final String SELECT_BLOCK = "SELECT id, meeting_id, parent_id, position, kind, origin, content, plain_text, "
             + "anchor_ms, client_rev, ai_state FROM note_blocks ";
 
@@ -29,6 +34,8 @@ public final class NoteStore {
 
     /** {@code applied} is false when the write was ignored because its rev was not higher than the stored one. */
     public record Upsert(boolean applied, BlockRow block) { }
+
+    public enum Acceptance { ACCEPTED, NOT_FOUND, NOT_AN_ADDITION }
 
     public Upsert putUserBlock(String meetingId, BlockWrite write, long nowMs) {
         return database.write(db -> {
@@ -57,12 +64,50 @@ public final class NoteStore {
                 .param(meetingId).query(NoteStore::row).list());
     }
 
+    /** The user's own blocks, in document order. */
+    public List<BlockRow> userBlocks(String meetingId) {
+        return blocks(meetingId).stream().filter(b -> ORIGIN_USER.equals(b.origin())).toList();
+    }
+
+    /** Segment ids cited by each AI block of the meeting. */
+    public Map<String, List<Long>> sources(String meetingId) {
+        return database.read(db -> {
+            Map<String, List<Long>> sources = new LinkedHashMap<>();
+            db.sql("SELECT s.block_id, s.segment_id FROM block_sources s JOIN note_blocks b ON b.id = s.block_id "
+                            + "WHERE b.meeting_id = ? ORDER BY s.block_id, s.segment_id").param(meetingId)
+                    .query((rs, row) -> Map.entry(rs.getString(1), rs.getLong(2))).list()
+                    .forEach(entry -> sources.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).add(entry.getValue()));
+            return sources;
+        });
+    }
+
+    /** Removes the block and the AI additions that hang under it. Returns false when it does not exist. */
+    public boolean delete(String meetingId, String blockId) {
+        return database.write(db -> {
+            db.sql("DELETE FROM note_blocks WHERE meeting_id = ? AND origin = ? AND parent_id = ?")
+                    .params(meetingId, ORIGIN_AI, blockId).update();
+            return db.sql("DELETE FROM note_blocks WHERE meeting_id = ? AND id = ?").params(meetingId, blockId).update() > 0;
+        });
+    }
+
+    /** Marks a proposed addition as accepted; an edited or accepted one keeps its state. */
+    public Acceptance accept(String meetingId, String blockId, long nowMs) {
+        return database.write(db -> {
+            Optional<BlockRow> block = find(db, meetingId, blockId);
+            if (block.isEmpty()) return Acceptance.NOT_FOUND;
+            if (!ORIGIN_AI.equals(block.get().origin())) return Acceptance.NOT_AN_ADDITION;
+            db.sql("UPDATE note_blocks SET ai_state = ?, updated_at = ? WHERE id = ? AND ai_state = ?")
+                    .params(STATE_ACCEPTED, nowMs, blockId, STATE_PROPOSED).update();
+            return Acceptance.ACCEPTED;
+        });
+    }
+
     private static Optional<BlockRow> find(JdbcClient db, String meetingId, String blockId) {
         return db.sql(SELECT_BLOCK + "WHERE id = ? AND meeting_id = ?").params(blockId, meetingId)
                 .query(NoteStore::row).optional();
     }
 
-    private static BlockRow row(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+    static BlockRow row(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         long anchor = rs.getLong("anchor_ms");
         Long anchorMs = rs.wasNull() ? null : anchor;
         return new BlockRow(rs.getString("id"), rs.getString("meeting_id"), rs.getString("parent_id"),

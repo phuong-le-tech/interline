@@ -85,9 +85,7 @@ public final class EnhancementRunner {
             List<SegmentLine> inside = citable.stream().filter(s -> window.contains(s.startMs())).toList();
             tasks.add(new Task(TASK_BLOCK, List.of(byId.get(window.blockId())), inside));
         }
-        List<SegmentLine> uncovered = citable.stream()
-                .filter(s -> windows.stream().noneMatch(w -> w.contains(s.startMs()))).toList();
-        if (!uncovered.isEmpty()) tasks.add(new Task(TASK_OTHER, input.blocks(), uncovered));
+        tasks.add(new Task(TASK_OTHER, input.blocks(), citable));
         return tasks;
     }
 

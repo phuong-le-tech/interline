@@ -1,6 +1,13 @@
 package app.interline.app;
 
 import app.interline.agent.AgentPlatformCapabilities;
+import app.interline.ai.ConnectionTester;
+import app.interline.persistence.AiStore;
+import app.interline.persistence.CaptureStore;
+import app.interline.persistence.NoteStore;
+import app.interline.persistence.ProviderStore;
+import app.interline.persistence.SearchStore;
+import app.interline.persistence.TemplateStore;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.beans.factory.ObjectProvider;
@@ -19,6 +26,29 @@ class CoreConfiguration {
     private static final String DEV_VERSION = "dev";
 
     @Bean Clock clock() { return Clock.systemUTC(); }
+
+    @Bean AgentSecrets agentSecrets() { return new AgentSecrets(); }
+
+    @Bean CaptureStore captureStore(DurableCaptureIngest ingest) { return ingest.store(); }
+
+    @Bean NoteStore noteStore(DurableCaptureIngest ingest) { return new NoteStore(ingest.database()); }
+
+    @Bean AiStore aiStore(DurableCaptureIngest ingest) { return new AiStore(ingest.database()); }
+
+    @Bean ProviderStore providerStore(DurableCaptureIngest ingest) { return new ProviderStore(ingest.database()); }
+
+    @Bean TemplateStore templateStore(DurableCaptureIngest ingest) { return new TemplateStore(ingest.database()); }
+
+    @Bean SearchStore searchStore(DurableCaptureIngest ingest) { return new SearchStore(ingest.database()); }
+
+    @Bean ProviderService providerService(ProviderStore providers, AgentSecrets secrets, Clock clock) {
+        return new ProviderService(providers, secrets, new ConnectionTester(), clock);
+    }
+
+    @Bean EnhancementService enhancementService(NoteStore notes, AiStore ai, TemplateStore templates,
+                                               CaptureStore meetings, ProviderService providers, EventBus events, Clock clock) {
+        return new EnhancementService(notes, ai, templates, meetings, providers, events, clock);
+    }
 
     @Bean(destroyMethod = "close")
     DurableCaptureIngest ingest(InterlineProperties properties) {
@@ -52,7 +82,7 @@ class CoreConfiguration {
 
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
-                                          String coreVersion, ModelService models) {
+                                          String coreVersion, ModelService models, AgentSecrets secrets) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -67,12 +97,14 @@ class CoreConfiguration {
                 capture = new AgentPlatformCapabilities(new AgentPlatformCapabilities.Config(command,
                         properties.logDir().resolve("agent.log"), properties.agentHeartbeatInterval(), coreVersion),
                         clock, recording);
+                secrets.bind(capture.secrets());
                 recording.bind(capture);
                 capture.start();
             }
 
             @Override public synchronized void stop() {
                 recording.shutdown();
+                secrets.unbind();
                 if (capture != null) capture.close();
                 capture = null;
             }

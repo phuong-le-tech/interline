@@ -46,6 +46,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(2);
     /** A freshly launched JVM needs time to say hello; the heartbeat deadline only applies after that. */
     private static final Duration STARTUP_GRACE = Duration.ofSeconds(5);
+    private static final Duration READY_WAIT = Duration.ofSeconds(15);
+    private static final Duration READY_POLL = Duration.ofMillis(50);
 
     private final Config config;
     private final Clock clock;
@@ -330,9 +332,24 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     /** The OS secret store, reached through the connected agent. */
     public app.interline.domain.SecretStore secrets() { return new AgentSecretStore(this::exchange); }
 
+    /** The agent may still be starting right after boot or restarting: wait briefly instead of failing at once. */
+    private Link awaitReadyLink() {
+        long deadline = System.nanoTime() + READY_WAIT.toNanos();
+        while (true) {
+            Link current = link;
+            if (current != null && current.ready) return current;
+            if (terminated || System.nanoTime() >= deadline) throw new IllegalStateException("The capture agent is not connected");
+            try {
+                Thread.sleep(READY_POLL.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for the capture agent", e);
+            }
+        }
+    }
+
     private ControlMessage exchange(String type, ObjectNode body, Duration timeout) {
-        Link current = link;
-        if (current == null || !current.ready) throw new IllegalStateException("The capture agent is not connected");
+        Link current = awaitReadyLink();
         String id = nextRequestId();
         var reply = new java.util.concurrent.CompletableFuture<ControlMessage>();
         pendingExchanges.put(id, reply);

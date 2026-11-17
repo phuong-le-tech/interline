@@ -51,6 +51,8 @@ public final class DurableCaptureIngest implements AutoCloseable {
 
     public CaptureStore store() { return store; }
 
+    public SqliteDatabase database() { return database; }
+
     /** Where "is the agent cancelling echo?" comes from: its advertised capabilities, or a configured override. */
     public void useAecSource(BooleanSupplier aecActive) { this.aecActive = aecActive; }
 
