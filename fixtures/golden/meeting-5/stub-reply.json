@@ -1,0 +1,66 @@
+{
+ "blocks": [
+  {
+   "user_block_id": "01900005-0001-7051-800c-00000007a121",
+   "additions": [
+    {
+     "text": "Les tests automatiques ont nettement reduit le nombre de regressions.",
+     "sources": [
+      5002
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900005-0002-7052-8013-00000007a122",
+   "additions": [
+    {
+     "text": "Le deploiement a pris trois heures; son automatisation est le plus gros irritant.",
+     "sources": [
+      5003
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900005-0003-7053-801a-00000007a123",
+   "additions": [
+    {
+     "text": "Une demi-journee est reservee vendredi pour mettre la documentation a jour.",
+     "sources": [
+      5007
+     ]
+    }
+   ]
+  }
+ ],
+ "other_points": [
+  {
+   "text": "Julien prend le sujet de l'automatisation du deploiement des lundi.",
+   "sources": [
+    5005,
+    5006
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "text": "Automatiser le deploiement",
+   "owner": "Julien",
+   "due": null,
+   "sources": [
+    5004,
+    5005
+   ]
+  },
+  {
+   "text": "Mettre a jour la documentation vendredi",
+   "owner": "Equipe",
+   "due": "2026-11-20",
+   "sources": [
+    5008
+   ]
+  }
+ ],
+ "title_suggestion": "Retrospective: tests, deploiement, documentation"
+}

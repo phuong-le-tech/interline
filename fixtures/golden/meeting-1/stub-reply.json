@@ -1,0 +1,64 @@
+{
+ "blocks": [
+  {
+   "user_block_id": "01900001-0001-7011-8008-0000000186a1",
+   "additions": [
+    {
+     "text": "La finance doit participer: une reunion de cadrage est prevue jeudi prochain.",
+     "sources": [
+      1002
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900001-0002-7012-800f-0000000186a2",
+   "additions": [
+    {
+     "text": "Le plus gros contrat vaut environ quarante mille euros; relance du client des demain.",
+     "sources": [
+      1004
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900001-0003-7013-8016-0000000186a3",
+   "additions": [
+    {
+     "text": "La sortie est decalee au quinze decembre, le support sera prevenu.",
+     "sources": [
+      1006
+     ]
+    }
+   ]
+  }
+ ],
+ "other_points": [
+  {
+   "text": "Les vacances de fin d'annee: dates a poser avant vendredi.",
+   "sources": [
+    1008
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "text": "Preparer la reunion de cadrage avec la finance",
+   "owner": "Me",
+   "due": "2026-11-26",
+   "sources": [
+    1003
+   ]
+  },
+  {
+   "text": "Relancer le client principal",
+   "owner": "Me",
+   "due": null,
+   "sources": [
+    1005
+   ]
+  }
+ ],
+ "title_suggestion": "Point produit: budget, contrats et facturation"
+}
