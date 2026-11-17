@@ -48,11 +48,28 @@ setup for both runs):**
 the echo at the source is not needed on this evidence (one Mac, built-in speakers, one sentence).
 
 **Finding, voice processing on:** the system stream produced nothing (0 rows against 4, same audio, twice). It is
-more than an inconclusive run. Hypothesis, not verified: enabling `setVoiceProcessingEnabled(true)` makes the
-input node reconfigure the audio hardware (aggregate/IO unit), which rebuilds or invalidates the process tap that
-is bound to the default output device; the agent restarts the microphone on `AVAudioEngineConfigurationChange`
-but does not rebuild the tap on that path. Not investigated further in M1: a device-reconfiguration rewrite does
-not belong in this PR. Follow-up card with the evidence (`c_off` 4 rows, `c_on` 0 rows, same session).
+more than an inconclusive run. Two candidate causes were identified:
+
+1. Enabling `setVoiceProcessingEnabled(true)` makes the input node reconfigure the audio hardware
+   (aggregate/IO unit), which rebuilds or invalidates the process tap that is bound to the default output device.
+   The agent restarted the microphone on `AVAudioEngineConfigurationChange` but did not rebuild the tap on that
+   path, so the system stream died.
+2. The process tap is incompatible with the voice-processing IO configuration and cannot produce frames while it
+   is active.
+
+**What shipped.** A `ConfigurationRestartCoordinator` now handles `AVAudioEngineConfigurationChange`: it stops and
+restarts the microphone, then stops and rebuilds the process tap and its private aggregate device. A 500 ms
+coalescing window absorbs the burst of notifications that the mic restart itself produces, so at most one
+restart/rebuild pair fires. When voice processing is on, the coordinator also disables other-audio ducking
+(`voiceProcessingOtherAudioDuckingConfiguration` with advanced ducking off and level set to min) before starting
+the microphone, so the active call is not ducked. One-line diagnostics on stderr log tap/aggregate creation and
+destruction (id, device, format, OSStatus) and, every 5 s per stream, frame count and peak level, so the hardware
+sitting can confirm both streams are alive without logging PCM.
+
+**Verification.** The restart coordinator and the diagnostics formatter are exercised in `CaptureSelfTest` with
+injected fakes and a manual clock; all self-tests pass. Whether cause 1, cause 2 or both are the real failure on
+hardware is only provable by re-running the sitting. The human gate (`scripts/m1/human-gate.sh --only c`) must
+show `c_on_rows_system > 0` before this ADR is accepted.
 
 **What the UI does with a suppressed row.** Finding at the sitting: the public transcript (`GET` transcript)
 excludes suppressed rows (`suppressed = 0` filter) and they stay in the database, but the live panel applied

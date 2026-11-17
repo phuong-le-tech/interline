@@ -383,6 +383,238 @@ test("AC2_frame_assembler_reframes_odd_chunks_to_100ms_without_loss") {
     let flat = emitted.flatMap { $0 }
     try require(flat.enumerated().allSatisfy { Int16(truncatingIfNeeded: $0.offset) == $0.element }, "samples must stay in order")
 }
+// Voice processing on must not kill the system (process tap) stream (ADR-009 section 2).
+// The coordinator, the diagnostics formatter and the statistics window are real; the source pair, the
+// clock and the diagnostics sink are fakes, so nothing here touches hardware and nothing sleeps.
+
+/// Records what the coordinator asked for and can fail the tap build on demand.
+final class FakeConfigurationSource: ConfigurationRestartSource {
+    enum TapFailure: Error, CustomStringConvertible {
+        case unavailable
+        var description: String { "the process tap could not be rebuilt" }
+    }
+
+    var events: [String] = []
+    var duckingRequests: [OtherAudioDucking] = []
+    var voiceProcessingFlags: [Bool] = []
+    var failTapStart = false
+    private(set) var micStarts = 0
+    private(set) var micStops = 0
+    private(set) var tapStarts = 0
+    private(set) var tapStops = 0
+    private(set) var micRunning = false
+
+    func startMicrophone(voiceProcessing: Bool) throws {
+        micStarts += 1
+        micRunning = true
+        voiceProcessingFlags.append(voiceProcessing)
+        events.append("mic.start")
+    }
+
+    func stopMicrophone() {
+        micStops += 1
+        micRunning = false
+        events.append("mic.stop")
+    }
+
+    func startSystemTap() throws {
+        tapStarts += 1
+        if failTapStart { throw TapFailure.unavailable }
+        events.append("tap.start")
+    }
+
+    func stopSystemTap() {
+        tapStops += 1
+        events.append("tap.stop")
+    }
+
+    func setOtherAudioDucking(_ configuration: OtherAudioDucking) {
+        duckingRequests.append(configuration)
+        events.append("ducking")
+    }
+}
+
+/// Monotonic millisecond clock the cases move by hand; the coordinator can never wait on real time.
+final class ManualClock {
+    private(set) var nowMS = 0
+    func advance(_ milliseconds: Int) { nowMS += milliseconds }
+}
+
+func coordinator(_ source: FakeConfigurationSource, _ clock: ManualClock,
+                 onFailure: @escaping (UInt8, String) -> Void = { _, _ in },
+                 onDeviceChanged: @escaping (UInt8) -> Void = { _ in }) -> ConfigurationRestartCoordinator {
+    ConfigurationRestartCoordinator(source: source, clock: { clock.nowMS },
+                                    onFailure: onFailure, onDeviceChanged: onDeviceChanged)
+}
+
+test("AC1_event_restarts_mic_then_tap") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    var failures: [(UInt8, String)] = []
+    var devices: [UInt8] = []
+    let restarts = coordinator(source, clock, onFailure: { failures.append(($0, $1)) },
+                               onDeviceChanged: { devices.append($0) })
+    try restarts.start(voiceProcessing: false)
+    try require(source.micStarts == 1 && source.tapStarts == 1,
+                "start must run the mic once and the tap once, got mic=\(source.micStarts) tap=\(source.tapStarts)")
+    source.events.removeAll()
+    restarts.configurationChanged()
+    try require(source.events == ["mic.stop", "mic.start", "tap.stop", "tap.start"],
+                "one configuration change must restart the mic, then rebuild the tap; got \(source.events)")
+    try require(source.micStarts == 2 && source.tapStarts == 2,
+                "exactly one mic restart and one tap rebuild, got mic=\(source.micStarts) tap=\(source.tapStarts)")
+    try require(devices == [StreamID.mic, StreamID.system],
+                "each successful restart must announce device.changed for mic then system, got \(devices)")
+    try require(failures.isEmpty, "a nominal restart must not report a failure, got \(failures)")
+}
+
+test("AC2_five_events_one_pair") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    let restarts = coordinator(source, clock)
+    try restarts.start(voiceProcessing: false)
+    for _ in 0..<5 {
+        restarts.configurationChanged()
+        clock.advance(100)
+    }
+    try require(source.micStarts == 2, "five events at 0,100,200,300,400 ms must restart the mic once, got \(source.micStarts - 1) restarts")
+    try require(source.tapStarts == 2, "five events at 0,100,200,300,400 ms must rebuild the tap once, got \(source.tapStarts - 1) rebuilds")
+}
+
+test("AC2_window_boundary_499_500") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    let restarts = coordinator(source, clock)
+    try restarts.start(voiceProcessing: false)
+    restarts.configurationChanged()
+    clock.advance(499)
+    restarts.configurationChanged()
+    try require(source.micStarts == 2 && source.tapStarts == 2,
+                "an event 499 ms after the pair still coalesces, got mic=\(source.micStarts) tap=\(source.tapStarts)")
+    clock.advance(1)
+    restarts.configurationChanged()
+    try require(source.micStarts == 3 && source.tapStarts == 3,
+                "an event exactly 500 ms after the pair starts a new pair, got mic=\(source.micStarts) tap=\(source.tapStarts)")
+}
+
+test("AC2_idle_no_restart_loop") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    let restarts = coordinator(source, clock)
+    try restarts.start(voiceProcessing: false)
+    restarts.configurationChanged()
+    clock.advance(5000)
+    try require(source.micStarts == 2 && source.tapStarts == 2,
+                "five idle seconds with no event must not restart anything, got mic=\(source.micStarts) tap=\(source.tapStarts)")
+}
+
+test("AC3_event_after_stop_ignored") {
+    let stopped = FakeConfigurationSource()
+    let stoppedClock = ManualClock()
+    let stoppedCoordinator = coordinator(stopped, stoppedClock)
+    try stoppedCoordinator.start(voiceProcessing: false)
+    stoppedCoordinator.stop()
+    stopped.events.removeAll()
+    stoppedCoordinator.configurationChanged()
+    try require(stopped.micStarts == 1 && stopped.tapStarts == 1,
+                "an event after stop must not restart or rebuild, got mic=\(stopped.micStarts) tap=\(stopped.tapStarts)")
+    try require(stopped.events.isEmpty, "an event after stop must not touch the sources, got \(stopped.events)")
+
+    let restarted = FakeConfigurationSource()
+    let restartedClock = ManualClock()
+    let restartedCoordinator = coordinator(restarted, restartedClock)
+    try restartedCoordinator.start(voiceProcessing: false)
+    restartedCoordinator.configurationChanged()
+    restartedCoordinator.stop()
+    restartedCoordinator.configurationChanged()
+    try require(restarted.micStarts == 2 && restarted.tapStarts == 2,
+                "a stop after one pair must keep that pair and ignore the late event, got mic=\(restarted.micStarts) tap=\(restarted.tapStarts)")
+}
+
+test("AC4_tap_failure_reports_once_mic_alive") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    var failures: [(UInt8, String)] = []
+    let restarts = coordinator(source, clock, onFailure: { failures.append(($0, $1)) })
+    try restarts.start(voiceProcessing: false)
+    source.failTapStart = true
+    restarts.configurationChanged()
+    try require(failures.count == 1, "a tap rebuild failure must report exactly one error, got \(failures)")
+    try require(failures.first?.0 == StreamID.system,
+                "the tap failure belongs to the system stream, got stream \(String(describing: failures.first?.0))")
+    try require(!(failures.first?.1 ?? "").isEmpty, "the tap failure must carry a reason")
+    try require(source.micStarts == 2, "the mic restarts once before the tap rebuild, got \(source.micStarts) starts")
+    try require(source.micStops == 1, "a failed rebuild must not stop the mic again, got \(source.micStops) stops")
+    try require(source.micRunning, "the mic must keep running after a failed tap rebuild")
+}
+
+test("AC5_ducking_disabled_only_when_on") {
+    let on = FakeConfigurationSource()
+    let onClock = ManualClock()
+    let onCoordinator = coordinator(on, onClock)
+    try onCoordinator.start(voiceProcessing: true)
+    try require(on.duckingRequests.count == 1,
+                "voice processing on must request other-audio ducking exactly once, got \(on.duckingRequests.count)")
+    try require(on.duckingRequests.first?.advancedDuckingEnabled == false,
+                "voice processing on must turn advanced ducking off, got \(String(describing: on.duckingRequests.first))")
+    try require(on.duckingRequests.first?.level == .min,
+                "voice processing on must duck at the minimum level, got \(String(describing: on.duckingRequests.first))")
+    try require(on.events.first == "ducking",
+                "the ducking configuration must be requested before the mic starts, got \(on.events)")
+
+    let off = FakeConfigurationSource()
+    let offClock = ManualClock()
+    let offCoordinator = coordinator(off, offClock)
+    try offCoordinator.start(voiceProcessing: false)
+    try require(off.duckingRequests.isEmpty,
+                "voice processing off must leave other-audio ducking untouched, got \(off.duckingRequests)")
+}
+
+test("AC6_diagnostics_line_shapes") {
+    var lines: [String] = []
+    let clock = ManualClock()
+    let diagnostics = CaptureDiagnostics(clock: { clock.nowMS }, sink: { lines.append($0) })
+    diagnostics.tapCreated(id: 42, device: "MacBook Pro Speakers", format: "48000 Hz, 2 ch", status: 0)
+    diagnostics.tapDestroyed(id: 42, device: "MacBook Pro Speakers", format: "48000 Hz, 2 ch", status: 0)
+    diagnostics.aggregateCreated(id: 7, device: "Interline tap", format: "48000 Hz, 2 ch", status: 0)
+    diagnostics.aggregateDestroyed(id: 7, device: "Interline tap", format: "48000 Hz, 2 ch", status: -50)
+    try require(lines == [
+        #"capture.tap created id=42 device="MacBook Pro Speakers" format="48000 Hz, 2 ch" status=0"#,
+        #"capture.tap destroyed id=42 device="MacBook Pro Speakers" format="48000 Hz, 2 ch" status=0"#,
+        #"capture.aggregate created id=7 device="Interline tap" format="48000 Hz, 2 ch" status=0"#,
+        #"capture.aggregate destroyed id=7 device="Interline tap" format="48000 Hz, 2 ch" status=-50"#
+    ], "tap and aggregate lines must carry id, device, format and OSStatus; got \(lines)")
+
+    diagnostics.observe(stream: StreamID.mic, frames: 1600, peak: 0.5)
+    diagnostics.observe(stream: StreamID.system, frames: 800, peak: 0.25)
+    clock.advance(4999)
+    diagnostics.observe(stream: StreamID.mic, frames: 1600, peak: 0.9)
+    try require(lines.count == 4, "no stats line before the 5 s interval elapses, got \(lines.count) lines")
+    clock.advance(1)
+    diagnostics.observe(stream: StreamID.mic, frames: 1600, peak: 0.75)
+    try require(Array(lines.dropFirst(4)) == [
+        "capture.stats stream=mic window_ms=5000 frames=4800 peak=0.900",
+        "capture.stats stream=system window_ms=5000 frames=800 peak=0.250"
+    ], "one stats line per active stream on the 5 s boundary, frame count and peak only; got \(Array(lines.dropFirst(4)))")
+    try require(lines.allSatisfy { !$0.contains("[") && !$0.lowercased().contains("pcm") },
+                "diagnostics must never carry samples, got \(lines)")
+}
+
+test("AC7_regression_voice_processing_off_unchanged") {
+    let source = FakeConfigurationSource()
+    let clock = ManualClock()
+    let restarts = coordinator(source, clock)
+    try restarts.start(voiceProcessing: false)
+    try require(source.duckingRequests.isEmpty,
+                "voice processing off must not touch other-audio ducking, got \(source.duckingRequests)")
+    try require(source.voiceProcessingFlags == [false],
+                "the mic starts with voice processing off, got \(source.voiceProcessingFlags)")
+    source.events.removeAll()
+    restarts.configurationChanged()
+    try require(source.events == ["mic.stop", "mic.start", "tap.stop", "tap.start"],
+                "voice processing off still restarts the mic then rebuilds the tap; got \(source.events)")
+}
+
 var failures = 0
 for (name, body) in cases {
     do { try body(); print("PASS \(name)") }
