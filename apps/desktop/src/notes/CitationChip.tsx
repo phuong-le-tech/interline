@@ -1,8 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- skeleton: parameters are used once the code-writer implements it */
-// M2 skeleton. Behaviour is specified by components.test.tsx (AC9).
+import React from 'react';
 
-export type CitationChipProps = { segmentId: number; label: string; onSelect: (segmentId: number) => void };
-
-export function CitationChip(_props: CitationChipProps) {
-  return null;
+interface Props {
+  segmentId: number;
+  label: string;
+  onSelect: (segmentId: number) => void;
 }
+
+export const CitationChip: React.FC<Props> = ({ segmentId, label, onSelect }) => (
+  <button
+    type="button"
+    className="citation-chip"
+    aria-label={`Source: ${label}`}
+    onClick={() => onSelect(segmentId)}
+  >
+    {label}
+  </button>
+);

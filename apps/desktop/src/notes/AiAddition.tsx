@@ -1,16 +1,27 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- skeleton: parameters are used once the code-writer implements it */
-// M2 skeleton. Behaviour is specified by components.test.tsx (AC9).
+import React from 'react';
+import { CitationChip } from './CitationChip';
 
 export type AiState = 'proposed' | 'accepted' | 'edited';
 
-export type AiAdditionProps = {
+interface Source {
+  segmentId: number;
+  label: string;
+}
+
+interface Props {
   blockId: string;
   text: string;
   state: AiState;
-  sources: { segmentId: number; label: string }[];
+  sources: Source[];
   onSelectSource: (segmentId: number) => void;
-};
-
-export function AiAddition(_props: AiAdditionProps) {
-  return null;
 }
+
+export const AiAddition: React.FC<Props> = ({ blockId, text, state, sources, onSelectSource }) => (
+  <div data-block-id={blockId} data-origin="ai" data-ai-state={state} className="ai-addition">
+    <span className="sr-only">AI addition</span>
+    <p>{text}</p>
+    {sources.map((s) => (
+      <CitationChip key={s.segmentId} segmentId={s.segmentId} label={s.label} onSelect={onSelectSource} />
+    ))}
+  </div>
+);

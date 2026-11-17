@@ -1,10 +1,33 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- skeleton: parameters are used once the code-writer implements it */
-// M2 skeleton. Behaviour is specified by components.test.tsx (AC9).
+import React from 'react';
 
-export type VersionMode = 'mine' | 'enhanced';
+export type Mode = 'mine' | 'enhanced';
 
-export type EnhancedToggleProps = { mode: VersionMode; onChange: (mode: VersionMode) => void };
-
-export function EnhancedToggle(_props: EnhancedToggleProps) {
-  return null;
+interface Props {
+  mode: Mode;
+  onChange: (mode: Mode) => void;
 }
+
+export const EnhancedToggle: React.FC<Props> = ({ mode, onChange }) => (
+  <fieldset role="radiogroup" aria-label="Version">
+    <label>
+      <input
+        type="radio"
+        name="version"
+        value="mine"
+        checked={mode === 'mine'}
+        onChange={() => onChange('mine')}
+      />
+      Mine
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="version"
+        value="enhanced"
+        checked={mode === 'enhanced'}
+        onChange={() => onChange('enhanced')}
+      />
+      Enhanced
+    </label>
+  </fieldset>
+);
