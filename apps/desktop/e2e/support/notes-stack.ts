@@ -1,3 +1,4 @@
+import { test as base, expect } from '@playwright/test';
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
@@ -131,7 +132,13 @@ export async function startNotesStack(options: { model?: boolean } = {}) {
 
   const stop = async () => {
     try {
-      for (const child of [...children].reverse()) await stopProcess(child);
+      for (const child of [...children].reverse()) {
+        try {
+          await stopProcess(child);
+        } catch {
+          // The group of a core killed on purpose can be gone or a zombie (EPERM): keep cleaning up the others.
+        }
+      }
       await proxy.stop();
       await model?.stop();
     } finally {
@@ -243,3 +250,22 @@ export async function startNotesStack(options: { model?: boolean } = {}) {
     throw error;
   }
 }
+
+/** `test` with a `stacks` fixture: every stack it starts is stopped at teardown, even when the test times out. */
+export const test = base.extend<{ stacks: (options?: { model?: boolean }) => Promise<NotesStack> }>({
+  // eslint-disable-next-line no-empty-pattern
+  stacks: async ({}, use, testInfo) => {
+    const started: NotesStack[] = [];
+    await use(async (options) => {
+      const stack = await startNotesStack(options);
+      started.push(stack);
+      return stack;
+    });
+    for (const stack of started) {
+      await testInfo.attach('notes-stack', { body: stack.diagnostics(), contentType: 'text/plain' });
+      await stack.stop();
+    }
+  },
+});
+
+export { expect };

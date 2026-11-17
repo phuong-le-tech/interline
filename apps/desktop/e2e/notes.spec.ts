@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { startNotesStack, type NotesStack } from './support/notes-stack';
+import { type Page } from '@playwright/test';
+import { expect, test, type NotesStack } from './support/notes-stack';
 
 /**
  * UI contract used by the M2 specs (the code-writer builds the UI to satisfy it):
@@ -24,30 +24,25 @@ async function openNotes(page: Page, stack: NotesStack) {
 }
 
 async function withStack(
-  testInfo: { attach: (name: string, options: { body: string; contentType: string }) => Promise<void> },
+  stacks: (options?: { model?: boolean }) => Promise<NotesStack>,
   options: { provider?: boolean; notes?: boolean },
   body: (stack: NotesStack) => Promise<void>,
 ) {
-  const stack = await startNotesStack();
-  try {
-    expect(stack.viteReady, `Vite must serve the desktop. ${stack.diagnostics()}`).toBe(true);
-    expect(stack.coreReady, `Core must emit READY. ${stack.diagnostics()}`).toBe(true);
-    stack.seed();
-    if (options.provider) await stack.configureProvider();
-    if (options.notes) await stack.putNotes();
-    await body(stack);
-  } finally {
-    await stack.stop();
-    await testInfo.attach('notes-stack', { body: stack.diagnostics(), contentType: 'text/plain' });
-  }
+  const stack = await stacks();
+  expect(stack.viteReady, `Vite must serve the desktop. ${stack.diagnostics()}`).toBe(true);
+  expect(stack.coreReady, `Core must emit READY. ${stack.diagnostics()}`).toBe(true);
+  stack.seed();
+  if (options.provider) await stack.configureProvider();
+  if (options.notes) await stack.putNotes();
+  await body(stack);
 }
 
 const userTexts = (stack: NotesStack) =>
   stack.query<{ plain_text: string }>("SELECT plain_text FROM note_blocks WHERE meeting_id = ? AND origin = 'user' ORDER BY position", stack.meetingId)
     .map((row) => row.plain_text);
 
-test('AC1_reloadIdentical - typed blocks persist with their id and anchor and a reload shows the same text', async ({ page }, testInfo) => {
-  await withStack(testInfo, {}, async (stack) => {
+test('AC1_reloadIdentical - typed blocks persist with their id and anchor and a reload shows the same text', async ({ page, stacks }) => {
+  await withStack(stacks, {}, async (stack) => {
     const editor = await openNotes(page, stack);
     await editor.click();
     await page.keyboard.type('Budget valide, réunion lundi');
@@ -72,8 +67,8 @@ test('AC1_reloadIdentical - typed blocks persist with their id and anchor and a 
   });
 });
 
-test('AC2_journalReplay - killing the core while typing loses no keystroke', async ({ page }, testInfo) => {
-  await withStack(testInfo, {}, async (stack) => {
+test('AC2_journalReplay - killing the core while typing loses no keystroke', async ({ page, stacks }) => {
+  await withStack(stacks, {}, async (stack) => {
     const editor = await openNotes(page, stack);
     await editor.click();
     await page.keyboard.type('Premier point avant la panne', { delay: 15 });
@@ -96,8 +91,8 @@ test('AC2_journalReplay - killing the core while typing loses no keystroke', asy
   });
 });
 
-test('AC7_formatMessage - invalid model output shows the format message and leaves the notes untouched', async ({ page }, testInfo) => {
-  await withStack(testInfo, { provider: true, notes: true }, async (stack) => {
+test('AC7_formatMessage - invalid model output shows the format message and leaves the notes untouched', async ({ page, stacks }) => {
+  await withStack(stacks, { provider: true, notes: true }, async (stack) => {
     stack.model!.reply = 'Sure! Here are your improved notes.';
     const editor = await openNotes(page, stack);
     const before = await editor.innerText();
@@ -111,8 +106,8 @@ test('AC7_formatMessage - invalid model output shows the format message and leav
   });
 });
 
-test('AC11_enhanceDisabled - without a provider Enhance is disabled and says Configure a provider', async ({ page }, testInfo) => {
-  await withStack(testInfo, { notes: true }, async (stack) => {
+test('AC11_enhanceDisabled - without a provider Enhance is disabled and says Configure a provider', async ({ page, stacks }) => {
+  await withStack(stacks, { notes: true }, async (stack) => {
     await openNotes(page, stack);
 
     await expect(page.getByRole('button', { name: 'Enhance' })).toBeDisabled();
