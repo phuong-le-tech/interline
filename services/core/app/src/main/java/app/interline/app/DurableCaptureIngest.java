@@ -123,8 +123,10 @@ public final class DurableCaptureIngest implements AutoCloseable {
         recordFinal(meetingId, new FinalSegment(kind, seg, startSample, endSample, text, UNKNOWN_MODEL, null));
     }
 
-    /** Store once per (meeting, stream, seg). Returns false when this delivery was a duplicate. */
-    public synchronized boolean recordFinal(String meetingId, FinalSegment segment) {
+    public record FinalResult(boolean stored, List<String> suppressedSegs) { }
+
+    /** Store once per (meeting, stream, seg). Returns the result, including any newly suppressed segments. */
+    public synchronized FinalResult recordFinal(String meetingId, FinalSegment segment) {
         return recordFinal(meetingId, segment, false);
     }
 
@@ -132,25 +134,33 @@ public final class DurableCaptureIngest implements AutoCloseable {
      * A mic final that repeats a system final of the same moment is kept but flagged {@code suppressed}; the check
      * runs in both delivery orders so the result does not depend on which STT result arrives first.
      */
-    public synchronized boolean recordFinal(String meetingId, FinalSegment segment, boolean recovered) {
+    public synchronized FinalResult recordFinal(String meetingId, FinalSegment segment, boolean recovered) {
         boolean stored = store.insertFinal(meetingId, segment.stream(), segment.seg(), segment.startSample(),
                 segment.endSample(), segment.text(), segment.model(), segment.avgLogprob(), recovered);
-        if (stored) suppressEcho(meetingId, segment);
-        return stored;
+        if (!stored) return new FinalResult(false, List.of());
+        return new FinalResult(true, suppressEcho(meetingId, segment));
     }
 
-    private void suppressEcho(String meetingId, FinalSegment segment) {
+    private List<String> suppressEcho(String meetingId, FinalSegment segment) {
         long startMs = segment.startSample() / SAMPLES_PER_MS;
         boolean aec = aecActive.getAsBoolean();
         if (segment.stream() == StreamKind.MIC) {
             boolean echo = store.segmentsNear(meetingId, StreamKind.SYSTEM, startMs, EchoSuppression.WINDOW_MS).stream()
                     .anyMatch(other -> EchoSuppression.isEcho(segment.text(), other.text(), aec));
-            if (echo) store.markSuppressed(meetingId, StreamKind.MIC, segment.seg());
-        } else {
-            store.segmentsNear(meetingId, StreamKind.MIC, startMs, EchoSuppression.WINDOW_MS).stream()
-                    .filter(mic -> !mic.suppressed() && EchoSuppression.isEcho(mic.text(), segment.text(), aec))
-                    .forEach(mic -> store.markSuppressed(meetingId, StreamKind.MIC, mic.seg()));
+            if (echo) {
+                store.markSuppressed(meetingId, StreamKind.MIC, segment.seg());
+                return List.of(segment.seg());
+            }
+            return List.of();
         }
+        List<String> suppressed = new ArrayList<>();
+        store.segmentsNear(meetingId, StreamKind.MIC, startMs, EchoSuppression.WINDOW_MS).stream()
+                .filter(mic -> !mic.suppressed() && EchoSuppression.isEcho(mic.text(), segment.text(), aec))
+                .forEach(mic -> {
+                    store.markSuppressed(meetingId, StreamKind.MIC, mic.seg());
+                    suppressed.add(mic.seg());
+                });
+        return suppressed;
     }
 
     @Override public void close() {

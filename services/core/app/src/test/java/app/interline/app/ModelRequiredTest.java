@@ -26,13 +26,16 @@ class ModelRequiredTest {
         @Override public void start(CaptureRequest request) { started.add(request); }
         @Override public void stop(String sessionId) { }
         @Override public boolean acknowledge(StreamKind stream, long seq, int window) { return true; }
-        @Override public void transcribeFile(String jobId, String path, StreamKind stream) { }
+        @Override public void transcribeFile(String jobId, String path, StreamKind stream, String language) { }
         @Override public void terminate() { }
     }
 
     private RecordingService service(SpeechModels models, StubCapture capture, String engine) throws Exception {
         var ingest = new DurableCaptureIngest(data);
-        var service = new RecordingService(ingest, new EventBus(), Clock.systemUTC(), data, new OrphanRecovery(ingest, data), models);
+        var properties = new InterlineProperties(null, data, data.resolve("logs"), null, List.of(), List.of(),
+                java.time.Duration.ofSeconds(2), null, new InterlineProperties.Echo(null),
+                new InterlineProperties.Stt("fr"), new InterlineProperties.Models(null));
+        var service = new RecordingService(ingest, new EventBus(), Clock.systemUTC(), data, new OrphanRecovery(ingest, data), models, properties);
         service.bind(capture);
         service.agentConnected(new AgentInfo("agent", "1", 1, false, engine));
         return service;

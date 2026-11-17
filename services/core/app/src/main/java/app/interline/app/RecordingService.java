@@ -69,6 +69,7 @@ public class RecordingService implements CaptureListener {
     private final Path spoolRoot;
     private final OrphanRecovery recovery;
     private final SpeechModels models;
+    private final InterlineProperties properties;
     private final Map<String, Map<StreamKind, List<Long>>> sttLatencies = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionT0 = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -86,6 +87,7 @@ public class RecordingService implements CaptureListener {
     /** Mutable state of the meeting being recorded; guarded by the service monitor. */
     private static final class Meeting {
         final String id;
+        final String language;
         final CountDownLatch finished = new CountDownLatch(1);
         final Map<StreamKind, Long> lastAcked = new EnumMap<>(StreamKind.class);
         final List<String> spoolDirs = new ArrayList<>();
@@ -95,14 +97,15 @@ public class RecordingService implements CaptureListener {
         long stopRequestedAt;
         long t0WallMs = -1;
 
-        Meeting(String id) {
+        Meeting(String id, String language) {
             this.id = id;
+            this.language = language;
             for (StreamKind stream : StreamKind.values()) lastAcked.put(stream, -1L);
         }
     }
 
     public RecordingService(DurableCaptureIngest ingest, EventBus events, Clock clock, Path dataDirectory,
-                            OrphanRecovery recovery, SpeechModels models) {
+                            OrphanRecovery recovery, SpeechModels models, InterlineProperties properties) {
         this.models = models;
         this.ingest = ingest;
         this.store = ingest.store();
@@ -110,6 +113,7 @@ public class RecordingService implements CaptureListener {
         this.clock = clock;
         this.spoolRoot = dataDirectory.resolve("spool");
         this.recovery = recovery;
+        this.properties = properties;
         timer.scheduleWithFixedDelay(this::tick, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -127,16 +131,26 @@ public class RecordingService implements CaptureListener {
     }
 
     public synchronized String start() {
+        return start(properties == null ? null : properties.stt().language());
+    }
+
+    public synchronized String start(String language) {
         if (capture == null || unavailableCode != null) {
             throw new RecordingException(503, "Capture is unavailable" + (unavailableCode == null ? "" : ": " + unavailableCode));
         }
         if (active != null) throw new RecordingException(409, "A recording is already running");
+        String storedLanguage = "auto".equals(language) ? null : language;
+        if (storedLanguage != null && !storedLanguage.matches("^[a-z]{2,3}$")) {
+            throw new RecordingException(400, "invalid_language",
+                    "Language must be 'auto' or a 2-3 letter lowercase code");
+        }
         if (needsSpeechModel() && models.speechModel().isEmpty()) {
             throw new RecordingException(409, MODEL_MISSING, "No speech model is installed: download one from the Models screen first");
         }
         String id = UuidV7.next(clock.millis());
         ingest.openMeeting(id);
-        active = new Meeting(id);
+        store.setLanguage(id, storedLanguage);
+        active = new Meeting(id, storedLanguage);
         if (agentConnected) sendSessionStart();
         return id;
     }
@@ -224,13 +238,17 @@ public class RecordingService implements CaptureListener {
 
     @Override public synchronized void finalSegment(FinalSegment segment) {
         if (active == null) return;
-        if (!ingest.recordFinal(active.id, segment)) return;
+        DurableCaptureIngest.FinalResult result = ingest.recordFinal(active.id, segment);
+        if (!result.stored()) return;
         long receivedAtMs = clock.millis();
         recordLatency(segment, receivedAtMs);
         events.publish("stt.final", Map.of("meetingId", active.id, "stream", segment.stream().wireName(),
                 "seg", segment.seg(), "speaker", segment.stream().speakerLabel(),
                 "startMs", segment.startSample() / SAMPLES_PER_MS, "endMs", segment.endSample() / SAMPLES_PER_MS,
                 "text", segment.text(), "receivedAtMs", receivedAtMs));
+        for (String seg : result.suppressedSegs()) {
+            events.publish("transcript.suppressed", Map.of("meetingId", active.id, "stream", StreamKind.MIC.wireName(), "seg", seg));
+        }
     }
 
     @Override public synchronized void sessionStopped(String sessionId) {
@@ -261,7 +279,9 @@ public class RecordingService implements CaptureListener {
 
     private void sendRecoveryJobs() {
         if (capture == null) return;
-        for (var job : recovery.pendingJobs()) capture.transcribeFile(job.id(), job.path(), job.stream());
+        for (var job : recovery.pendingJobs()) {
+            capture.transcribeFile(job.id(), job.path(), job.stream(), store.language(job.meetingId()));
+        }
     }
 
     /** STT latency: when the core received the final, minus when its audio ended on the wall clock. */
@@ -344,7 +364,8 @@ public class RecordingService implements CaptureListener {
         ResumeState resume = resuming ? resumeState(meeting) : null;
         meeting.spoolDirs.add(spoolDir);
         capture.start(new CaptureRequest(meeting.id, spoolDir, resume,
-                models.speechModel().map(Path::toString).orElse(null), models.vadModel().map(Path::toString).orElse(null)));
+                models.speechModel().map(Path::toString).orElse(null), models.vadModel().map(Path::toString).orElse(null),
+                meeting.language));
     }
 
     private ResumeState resumeState(Meeting meeting) {
