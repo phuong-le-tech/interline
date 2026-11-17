@@ -32,6 +32,7 @@ export type ManagedProcess = {
   exited: Promise<void>;
   finished: () => boolean;
   output: () => string;
+  record: (text: string) => void;
 };
 
 type LaunchOptions = {
@@ -48,7 +49,7 @@ export function launch(command: string, args: string[], options: LaunchOptions =
   let finished = false;
   const child = spawn(command, args, { cwd, env, detached: true, stdio: 'pipe' });
   const append = (data: Buffer | string) => {
-    output = redact(stripVTControlCharacters(data.toString())).slice(-outputLimit);
+    output = (output + stripVTControlCharacters(data.toString())).slice(-outputLimit);
   };
   child.stdout.on('data', append);
   child.stderr.on('data', append);
@@ -65,17 +66,19 @@ export function launch(command: string, args: string[], options: LaunchOptions =
       done();
     });
   });
-  return { child, exited, finished: () => finished, output: () => output };
+  return { child, exited, finished: () => finished, output: () => redact(output), record: append };
 }
 
 function signalProcessGroup(managed: ManagedProcess, signal: NodeJS.Signals) {
-  if (!managed.child.pid || managed.finished()) return;
+  if (!managed.child.pid) return;
   try {
+    // Signal the group even when the parent already exited: its agent child may outlive it.
     process.kill(-managed.child.pid, signal);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    // ESRCH: process already gone; EPERM: we cannot signal it (e.g. different session).
-    if (code !== 'ESRCH' && code !== 'EPERM') throw error;
+    if (code === 'ESRCH') return;
+    if (code !== 'EPERM') throw error;
+    managed.record(`signal ${signal}: ${(error as Error).message}\n`);
   }
 }
 
@@ -119,15 +122,6 @@ export async function waitForPortFree(port: number, timeoutMs: number): Promise<
     await delay(PORT_POLL_INTERVAL_MS);
   }
   return !(await isPortOpen(port));
-}
-
-export async function waitForPortUsed(port: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isPortOpen(port)) return true;
-    await delay(PORT_POLL_INTERVAL_MS);
-  }
-  return await isPortOpen(port);
 }
 
 export async function readReadyPort(managed: ManagedProcess): Promise<number | undefined> {
@@ -205,7 +199,9 @@ export async function launchStack(options: StackOptions = {}): Promise<Stack> {
     try {
       if (vite) await stopProcess(vite);
       if (core) await stopProcess(core);
-      await waitForPortFree(5173, 5_000);
+      if (!(await waitForPortFree(5173, 5_000))) {
+        throw new Error('Port 5173 was not released after stopping Vite.');
+      }
     } finally {
       if (cleanupScratch) await rm(scratch, { recursive: true, force: true });
     }
@@ -306,4 +302,4 @@ export async function prepareNativeModels(dataDir: string, modelsDir: string): P
   }
 }
 
-export { MOCK_AGENT, NATIVE_AGENT, NATIVE_MODEL_FILES, origin, repository, desktop, DEFAULT_TOKEN };
+export { MOCK_AGENT, NATIVE_AGENT, origin, repository, DEFAULT_TOKEN };
