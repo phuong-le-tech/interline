@@ -33,7 +33,7 @@ public final class SqliteDatabase implements AutoCloseable {
             Files.createDirectories(file.toAbsolutePath().getParent());
             String url = "jdbc:sqlite:" + file.toAbsolutePath();
             Flyway.configure().dataSource(url, null, null)
-                    .locations("classpath:db/migration", "classpath:db/migration-m1").load().migrate();
+                    .locations("classpath:db/migration", "classpath:db/migration-m1", "classpath:db/migration-m2").load().migrate();
             SQLiteConfig config = new SQLiteConfig();
             config.setJournalMode(SQLiteConfig.JournalMode.WAL);
             config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);

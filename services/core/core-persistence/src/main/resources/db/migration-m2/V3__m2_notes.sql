@@ -1,0 +1,2 @@
+-- M2 notes and AI migration (ARCHITECTURE section 13 plus the M2 additions).
+-- Stub: the schema is written by the code-writer step. The tests in MigrationV3Test define the target.
