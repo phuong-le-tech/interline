@@ -8,20 +8,20 @@ import { stripVTControlCharacters } from 'node:util';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const repository = resolve(desktop, '../..');
-const origin = 'http://127.0.0.1:5173';
+export const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+export const repository = resolve(desktop, '../..');
+export const origin = 'http://127.0.0.1:5173';
 // Public test-only 256-bit value, not a credential. Never passed to core via env or argv.
-const token = Buffer.alloc(32, 0x14).toString('base64url');
+export const token = Buffer.alloc(32, 0x14).toString('base64url');
 
-type ManagedProcess = {
+export type ManagedProcess = {
   child: ChildProcessWithoutNullStreams;
   exited: Promise<void>;
   finished: () => boolean;
   output: () => string;
 };
 
-function launch(command: string, args: string[], env = process.env): ManagedProcess {
+export function launch(command: string, args: string[], env = process.env): ManagedProcess {
   let output = '';
   let finished = false;
   const child = spawn(command, args, { cwd: repository, env, detached: true, stdio: 'pipe' });
@@ -46,7 +46,7 @@ function launch(command: string, args: string[], env = process.env): ManagedProc
   return { child, exited, finished: () => finished, output: () => output };
 }
 
-async function readyPort(core: ManagedProcess): Promise<number | undefined> {
+export async function readyPort(core: ManagedProcess): Promise<number | undefined> {
   const lines = createInterface({ input: core.child.stdout });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -81,7 +81,7 @@ function signalGroup(managed: ManagedProcess, signal: NodeJS.Signals) {
   }
 }
 
-async function stopProcess(managed: ManagedProcess) {
+export async function stopProcess(managed: ManagedProcess) {
   if (!managed.finished()) {
     managed.child.stdin.end('{"cmd":"shutdown"}\n');
     await Promise.race([managed.exited, delay(2_000)]);
