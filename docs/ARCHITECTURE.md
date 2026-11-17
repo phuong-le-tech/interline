@@ -648,7 +648,7 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | JUnit | Jupiter 6.0.3, managed by Spring Boot | verified |
 | jqwik | 1.10.2 | verified |
 | ArchUnit | 1.5.1 | verified |
-| WireMock | not used in M0 | out of scope |
+| WireMock | 3.13.1 (standalone) | verified, used in core-ai provider tests |
 | springdoc-openapi | not used in M0 | out of scope |
 | Maven | 3.9.x via Wrapper | verified |
 | Tauri | 2.12.5 (Rust crate and `@tauri-apps/cli` 2.x) | verified |
@@ -657,7 +657,7 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | Silero VAD (ggml) | `ggml-silero-v6.2.0.bin` (885 098 B) | verified at M1: used through whisper.cpp VAD, catalog sha256 checked against Hugging Face |
 | Swift toolchain / Xcode | Swift 6.4.2, swift-tools 6.0, Command Line Tools only | verified at M1: `swift build` works, `swift test` does not (no XCTest, no swift-testing), so unit tests live in `CaptureSelfTest` |
 | React / TypeScript / Vite | 19 / 5.7.3 / 6.4.6 | verified |
-| TipTap / Tailwind CSS / shadcn/ui | not used in M0 | UI is unstyled in M0 |
+| TipTap / Tailwind CSS / shadcn/ui | TipTap 3.x, unique-id 3.34.0 | verified on npm; UI styles in `apps/desktop/src/styles.css` |
 
 ## 18. ADRs
 
@@ -667,10 +667,10 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | ADR-002 | Capture agent contract (Agent Protocol v1 over stdio) | Accepted |
 | ADR-003 | Platform ports, no OS leak, adding an OS | Accepted |
 | ADR-004 | macOS distribution without the Apple Developer Program (self-signed identity, install script) | Proposed (Accepted after the M1 spike) |
-| ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, AEC, whisper packaging, test input, compression | [Draft](docs/adr/ADR-009-macos-capture.md) (spikes pending the M1 sitting) |
-| ADR-005 | Note blocks with time anchors and the enhancement contract | To write (M2) |
-| ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | To write (M2) |
+| ADR-005 | Note blocks with time anchors and the enhancement contract | [Accepted](docs/adr/ADR-005-blocs-notes-et-contrat-enrichissement.md) |
+| ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | [Accepted](docs/adr/ADR-006-byok-llm-via-agent-secret-store.md) |
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
 | ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
+| ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, AEC, whisper packaging, test input, compression | [Draft](docs/adr/ADR-009-macos-capture.md) (spikes pending the M1 sitting) |
 | ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
 | ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL) | [Accepted](docs/adr/ADR-011-core-owns-the-data.md) |
