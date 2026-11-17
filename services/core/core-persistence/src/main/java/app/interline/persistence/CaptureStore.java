@@ -20,7 +20,7 @@ public final class CaptureStore {
 
     public record MeetingRow(String id, String title, String status, Long startedAt, Long endedAt) { }
 
-    public record TranscriptRow(String stream, String seg, String speaker, long startMs, long endMs, String text) { }
+    public record TranscriptRow(long id, String stream, String seg, String speaker, long startMs, long endMs, String text) { }
 
     /** A stored final, as the echo heuristic sees it. */
     public record SegmentRow(String stream, String seg, long startMs, long endMs, String text, boolean suppressed) { }
@@ -191,12 +191,12 @@ public final class CaptureStore {
     }
 
     public List<TranscriptRow> transcript(String meetingId) {
-        return database.read(db -> db.sql("SELECT s.source, t.agent_seg, s.label, t.start_ms, t.end_ms, t.text "
+        return database.read(db -> db.sql("SELECT t.id, s.source, t.agent_seg, s.label, t.start_ms, t.end_ms, t.text "
                         + "FROM transcript_segments t JOIN speakers s ON s.id = t.speaker_id "
                         + "WHERE t.meeting_id = ? AND t.suppressed = 0 ORDER BY t.start_ms, t.id")
                 .param(meetingId)
-                .query((rs, row) -> new TranscriptRow(rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getLong(4), rs.getLong(5), rs.getString(6))).list());
+                .query((rs, row) -> new TranscriptRow(rs.getLong(1), rs.getString(2), rs.getString(3),
+                        rs.getString(4), rs.getLong(5), rs.getLong(6), rs.getString(7))).list());
     }
 
     private static void insertRun(JdbcClient db, String meetingId, String agentName,
