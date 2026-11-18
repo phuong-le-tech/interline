@@ -183,10 +183,11 @@ class MeetingStoreTest {
     }
 
     @Test
-    void subjectSeriesUidIsNullForANonIcsEvent() {
+    void subjectSeriesUidOfANonIcsEventIsKeyedBySource() {
         event("e1", "manual", "g#1", 1000);
         store.createDraft("m1", "t", "e1", NOW);
-        assertThat(store.subject("m1").orElseThrow().seriesUid()).isNull();
+        // Review round 1: series match on source AND UID, so other sources work too and never collide with ics.
+        assertThat(store.subject("m1").orElseThrow().seriesUid()).isEqualTo("manual\u0000g");
     }
 
     @Test
@@ -340,10 +341,10 @@ class MeetingStoreTest {
     }
 
     @Test
-    void candidateSeriesUidIsNullForNonIcsEvents() {
+    void candidateSeriesUidOfANonIcsEventIsKeyedBySource() {
         event("e1", "manual", "g#1", 500);
         meeting("m1", "t", null, 1, "e1", null);
-        assertThat(store.candidates("x", 10_000, 10).get(0).seriesUid()).isNull();
+        assertThat(store.candidates("x", 10_000, 10).get(0).seriesUid()).isEqualTo("manual\u0000g");
     }
 
     @Test
