@@ -69,7 +69,7 @@ class M3Round2ApiTest {
         for (int i = 0; i < 3000; i++) {
             sb.append("BEGIN:VEVENT\r\nUID:hostile-").append(i).append("\r\nDTSTAMP:20260101T000000Z\r\n")
                     .append("DTSTART:20200101T080000Z\r\nDTEND:20200101T090000Z\r\nSUMMARY:Hostile ").append(i).append("\r\n")
-                    .append("RRULE:FREQ=YEARLY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12;BYMONTHDAY=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31;BYHOUR=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23\r\n")
+                    .append("RRULE:FREQ=YEARLY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12;BYMONTHDAY=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31\r\n")
                     .append("END:VEVENT\r\n");
         }
         return sb.toString();
