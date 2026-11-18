@@ -70,13 +70,21 @@ public final class MeetingStore {
 
     /** One transaction: false (and nothing changed) for an unknown or deleted meeting; otherwise the exact new list. */
     public boolean replaceParticipants(String meetingId, List<PersonInput> people, long nowMs) {
+        return replaceParticipantsAndList(meetingId, people, nowMs).isPresent();
+    }
+
+    /**
+     * Same, returning the resulting participants read inside the same transaction, so a concurrent change can never
+     * make a caller see somebody else's list.
+     */
+    public Optional<List<CalendarStore.PersonRow>> replaceParticipantsAndList(String meetingId, List<PersonInput> people, long nowMs) {
         return database.write(db -> {
             boolean exists = db.sql("SELECT count(*) FROM meetings WHERE id = ? AND deleted_at IS NULL").param(meetingId)
                     .query(Long.class).single() > 0;
-            if (!exists) return false;
+            if (!exists) return Optional.empty();
             db.sql("DELETE FROM meeting_participants WHERE meeting_id = ?").param(meetingId).update();
             link(db, meetingId, people, nowMs);
-            return true;
+            return Optional.of(CalendarStore.participantsOf(db, meetingId));
         });
     }
 

@@ -180,9 +180,13 @@ public final class CalendarStore {
     }
 
     public List<PersonRow> listParticipants(String meetingId) {
-        return database.read(db -> db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
+        return database.read(db -> participantsOf(db, meetingId));
+    }
+
+    static List<PersonRow> participantsOf(JdbcClient db, String meetingId) {
+        return db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
                         + "JOIN meeting_participants mp ON mp.person_id = p.id WHERE mp.meeting_id = ? ORDER BY p.created_at, p.rowid")
-                .param(meetingId).query(CalendarStore::person).list());
+                .param(meetingId).query(CalendarStore::person).list();
     }
 
     private static EventRow event(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

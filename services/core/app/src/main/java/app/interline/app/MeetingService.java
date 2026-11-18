@@ -22,7 +22,6 @@ final class MeetingService {
     static final int MAX_NAME_CHARS = 200;
     static final int MAX_EMAIL_CHARS = 320;
     private static final int PAGE_SIZE = 500;
-    private static final int MAX_SCANNED = 20_000;
     private static final int NOTES_PER_MEETING = 5;
 
     /** One participant as the user typed it; either part may be blank but not both. */
@@ -63,8 +62,8 @@ final class MeetingService {
     }
 
     List<PersonRow> replaceParticipants(String meetingId, List<ParticipantInput> participants) {
-        if (!meetings.replaceParticipants(meetingId, people(participants), clock.millis())) throw ApiProblems.notFound("meeting");
-        return calendar.listParticipants(meetingId);
+        return meetings.replaceParticipantsAndList(meetingId, people(participants), clock.millis())
+                .orElseThrow(() -> ApiProblems.notFound("meeting"));
     }
 
     Brief brief(String meetingId) {
@@ -84,11 +83,11 @@ final class MeetingService {
     /**
      * Matches first, limits after: candidates are read page by page, most recent first, so an old related meeting is not
      * hidden behind many newer unrelated ones. The scan stops once enough matches are found (everything left is older)
-     * or after MAX_SCANNED meetings.
+     * or when there are no more meetings; no history is ever dropped silently.
      */
     private List<Match> relatedMatches(BriefMatcher.Subject subject, String meetingId, long before) {
         List<BriefMatcher.Candidate> matched = new ArrayList<>();
-        for (int offset = 0; offset < MAX_SCANNED; offset += PAGE_SIZE) {
+        for (int offset = 0; ; offset += PAGE_SIZE) {
             List<BriefMatcher.Candidate> page = meetings.candidates(meetingId, before, PAGE_SIZE, offset);
             BriefMatcher.rank(subject, page).forEach(match -> matched.add(match.candidate()));
             if (page.size() < PAGE_SIZE || matched.size() >= BriefMatcher.MAX_RELATED) break;
