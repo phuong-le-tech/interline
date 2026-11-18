@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -123,6 +124,43 @@ public final class CalendarStore {
             return new PersonRow(existing.id(), name, existing.email(), existing.createdAt());
         }
         return existing;
+    }
+
+    public Optional<EventRow> findEvent(String eventId) {
+        return database.read(db -> db.sql(EVENT_COLUMNS + "WHERE id = ?").param(eventId).query(CalendarStore::event).optional());
+    }
+
+    /**
+     * The person for a name and an optional email. With an email: by lower-cased email. Without: an existing
+     * email-less person with the same name (trimmed, case-insensitive), else a new one. Nothing to go on: empty.
+     */
+    public Optional<PersonRow> resolvePerson(String name, String email, long nowMs) {
+        String cleanName = name == null ? "" : name.strip();
+        boolean hasEmail = email != null && !email.isBlank();
+        if (!hasEmail && cleanName.isEmpty()) return Optional.empty();
+        return Optional.of(database.write(db -> {
+            if (hasEmail) return upsertPerson(db, cleanName, email, nowMs);
+            String wanted = cleanName.toLowerCase(Locale.ROOT);
+            for (PersonRow person : db.sql(PERSON_COLUMNS + "WHERE email IS NULL ORDER BY created_at, rowid")
+                    .query(CalendarStore::person).list()) {
+                if (person.displayName().strip().toLowerCase(Locale.ROOT).equals(wanted)) return person;
+            }
+            String id = UuidV7.next(nowMs);
+            db.sql("INSERT INTO people(id, display_name, email, created_at) VALUES (?, ?, NULL, ?)").params(id, cleanName, nowMs).update();
+            return new PersonRow(id, cleanName, null, nowMs);
+        }));
+    }
+
+    /** One transaction: the meeting's participants become exactly these people. */
+    public void replaceParticipants(String meetingId, List<String> personIds) {
+        database.write(db -> {
+            db.sql("DELETE FROM meeting_participants WHERE meeting_id = ?").param(meetingId).update();
+            for (String personId : personIds) {
+                db.sql("INSERT OR IGNORE INTO meeting_participants(meeting_id, person_id) VALUES (?, ?)")
+                        .params(meetingId, personId).update();
+            }
+            return null;
+        });
     }
 
     public List<PersonRow> listPeople() {
