@@ -803,7 +803,8 @@ class IcsParserTest {
     void AC6_lineExactlyAtLimitIsAccepted() {
         String value = "z".repeat(IcsParser.MAX_LINE_CHARS - "SUMMARY:".length());
         CalendarSnapshot s = parse(cal(event("UID:u@example.com", "DTSTART:20260612T100000Z", "SUMMARY:" + value)), UTC);
-        assertThat(single(s).title()).isEqualTo(value);
+        // The line is accepted (not skipped); the 500 character title cap of review round 1 then applies.
+        assertThat(single(s).title()).isEqualTo(value.substring(0, IcsParser.MAX_TITLE_CHARS));
     }
 
     private static String manyEvents(int count) {
