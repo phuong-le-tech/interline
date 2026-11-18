@@ -17,12 +17,23 @@ M3 needs the user's calendar before a meeting. EventKit (macOS agent) is the v1 
 6. **Sync window and storage.** The window is -1 day / +14 days. A sync replaces the `ics` events of the window in one transaction (upsert present, delete absent), upserts people by lower-cased email (an existing non-empty display name is kept; attendees without email stay only in the event JSON). Past events outside the window are not purged by a sync.
 7. **API.** `PUT/GET/DELETE /api/v1/calendar/ics-source`, `POST /sync`, `GET /events`, behind the existing token filter, errors as problem+json (`calendar_not_configured` 409, `calendar_fetch_failed` 502).
 
+## Behaviour decisions (review round 1)
+
+- **Not a calendar is a failure.** A 200 body without a complete `BEGIN:VCALENDAR` ... `END:VCALENDAR` (sign-in HTML page, blank, truncated) is a sync failure (502 `calendar_fetch_failed`) and leaves the stored events alone. A valid but empty VCALENDAR still clears the window; a malformed single VEVENT is skipped and counted.
+- **Source changes versus a running sync.** Setting or removing the address bumps a source generation. A sync checks it under the same lock before writing and answers 409 `calendar_source_changed` instead of bringing back events of a dropped source. Fetching itself holds no lock, so removing the address never waits for a slow download.
+- **Moved instances inherit.** A RECURRENCE-ID override with no ATTENDEE, ORGANIZER or conference URL inherits attendees and conference URL from its master; one that has its own keeps its own. Overrides are placed by their own DTSTART, not by the original RECURRENCE-ID.
+- **Durations.** Timed parts (H, M, S) are elapsed time; day and week parts are nominal calendar days in the event zone (RFC 5545 3.3.6).
+- **Recurrence.** WKST is honoured for WEEKLY with BYDAY; YEARLY with BYMONTHDAY and no BYMONTH applies to every month.
+- **Field caps (warnings).** 200 attendees per event, title 500, attendee name 200, email 320 (the attendee is kept without the email), conference URL 2048 (dropped).
+- **Redirect hops are checked, the typed address is not.** A redirect may not go to `localhost`, `*.localhost`, `*.local`, `*.internal`, or to loopback, link-local (including 169.254.169.254), private and unique-local IP literals. With the test-only loopback flag only `http://127.0.0.1` stays allowed. DNS rebinding (a public name that resolves to a private address) is out of scope: the fetcher does not resolve names itself.
+- **People outlive the source.** Removing the ICS source deletes the `ics` events but keeps the `people` rows: participants and briefs may reference them later.
+
 ## Consequences
 
 - The M3 exit criterion "an ICS URL gives the same result on the Linux CI (MockAgent without calendar)" is testable now.
 - Without an agent there is no OS secret store, so saving the URL fails with `secret_store_unavailable` (503), like provider keys.
 - A calendar change appears at the next sync; refresh on start and every 5 minutes, `calendar.changed`, EventKit, notifications, briefs and the Home "Today" UI are later slices.
-- Sync is manual in this slice, so a malicious feed can only cost one bounded download and parse per user action.
+- Sync is manual in this slice, but a hostile feed is not free: it costs one bounded download (10 MB, 30 s) and a parse bounded by a parse-wide step budget (2 000 000 recurrence periods), a 10 s wall-clock deadline, a per-series cap, deduplicated rule lists (BYDAY, BYMONTHDAY, BYMONTH) and arithmetic jumping to the window instead of walking from DTSTART. When a limit is hit the parser stops expanding, keeps what it found and adds a warning.
 
 ## Deferred
 
