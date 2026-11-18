@@ -1,6 +1,5 @@
 package app.interline.app;
 
-import app.interline.domain.Attendee;
 import app.interline.domain.BriefMatcher;
 import app.interline.domain.BriefMatcher.Match;
 import app.interline.domain.UuidV7;
@@ -13,10 +12,8 @@ import app.interline.persistence.MeetingStore.MeetingInfo;
 
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Draft meetings (by hand or from a calendar event), their participants, and the brief built without AI. */
 final class MeetingService {
@@ -24,7 +21,8 @@ final class MeetingService {
     static final int MAX_PARTICIPANTS = 200;
     static final int MAX_NAME_CHARS = 200;
     static final int MAX_EMAIL_CHARS = 320;
-    private static final int CANDIDATE_LIMIT = 500;
+    private static final int PAGE_SIZE = 500;
+    private static final int MAX_SCANNED = 20_000;
     private static final int NOTES_PER_MEETING = 5;
 
     /** One participant as the user typed it; either part may be blank but not both. */
@@ -47,27 +45,16 @@ final class MeetingService {
     }
 
     String createManual(String title, List<ParticipantInput> participants) {
-        String cleanTitle = cleanTitle(title);
         String id = UuidV7.next(clock.millis());
-        synchronized (this) {
-            meetings.createDraft(id, cleanTitle, null, clock.millis());
-            calendar.replaceParticipants(id, personIds(participants));
-        }
+        meetings.createManual(id, cleanTitle(title), people(participants), clock.millis());
         return id;
     }
 
     /** Idempotent per event: the first call creates the draft, later calls return the same meeting. */
-    synchronized Created fromEvent(String eventId) {
-        EventRow event = calendar.findEvent(eventId).orElseThrow(() -> ApiProblems.notFound("calendar event"));
-        var existing = meetings.findByCalendarEvent(eventId);
-        if (existing.isPresent()) return new Created(existing.get(), false);
-        String id = UuidV7.next(clock.millis());
-        String title = event.title().strip();
-        meetings.createDraft(id, title.length() > MAX_TITLE_CHARS ? title.substring(0, MAX_TITLE_CHARS) : title, eventId, clock.millis());
-        List<ParticipantInput> attendees = new ArrayList<>();
-        for (Attendee attendee : event.attendees()) attendees.add(new ParticipantInput(attendee.name(), attendee.email()));
-        calendar.replaceParticipants(id, personIdsLenient(attendees));
-        return new Created(id, true);
+    Created fromEvent(String eventId) {
+        var result = meetings.createFromEvent(eventId, UuidV7.next(clock.millis()), clock.millis())
+                .orElseThrow(() -> ApiProblems.notFound("calendar event"));
+        return new Created(result.id(), result.created());
     }
 
     List<PersonRow> participants(String meetingId) {
@@ -75,9 +62,8 @@ final class MeetingService {
         return calendar.listParticipants(meetingId);
     }
 
-    synchronized List<PersonRow> replaceParticipants(String meetingId, List<ParticipantInput> participants) {
-        requireMeeting(meetingId);
-        calendar.replaceParticipants(meetingId, personIds(participants));
+    List<PersonRow> replaceParticipants(String meetingId, List<ParticipantInput> participants) {
+        if (!meetings.replaceParticipants(meetingId, people(participants), clock.millis())) throw ApiProblems.notFound("meeting");
         return calendar.listParticipants(meetingId);
     }
 
@@ -86,13 +72,28 @@ final class MeetingService {
         var subject = meetings.subject(meetingId).orElseThrow(() -> ApiProblems.notFound("meeting"));
         long before = meeting.calendarEventId() == null ? clock.millis()
                 : calendar.findEvent(meeting.calendarEventId()).map(EventRow::startsAt).orElse(clock.millis());
-        List<Match> matches = BriefMatcher.rank(subject, meetings.candidates(meetingId, before, CANDIDATE_LIMIT));
+        List<Match> matches = relatedMatches(subject, meetingId, before);
         List<RelatedMeeting> related = new ArrayList<>();
         for (Match match : matches) {
             related.add(new RelatedMeeting(match, meetings.userNotes(match.candidate().meetingId(), NOTES_PER_MEETING)));
         }
         List<ActionRow> actions = meetings.openActions(matches.stream().map(m -> m.candidate().meetingId()).toList());
         return new Brief(meetingId, calendar.listParticipants(meetingId), related, actions);
+    }
+
+    /**
+     * Matches first, limits after: candidates are read page by page, most recent first, so an old related meeting is not
+     * hidden behind many newer unrelated ones. The scan stops once enough matches are found (everything left is older)
+     * or after MAX_SCANNED meetings.
+     */
+    private List<Match> relatedMatches(BriefMatcher.Subject subject, String meetingId, long before) {
+        List<BriefMatcher.Candidate> matched = new ArrayList<>();
+        for (int offset = 0; offset < MAX_SCANNED; offset += PAGE_SIZE) {
+            List<BriefMatcher.Candidate> page = meetings.candidates(meetingId, before, PAGE_SIZE, offset);
+            BriefMatcher.rank(subject, page).forEach(match -> matched.add(match.candidate()));
+            if (page.size() < PAGE_SIZE || matched.size() >= BriefMatcher.MAX_RELATED) break;
+        }
+        return BriefMatcher.rank(subject, matched);
     }
 
     private MeetingInfo requireMeeting(String meetingId) {
@@ -131,18 +132,7 @@ final class MeetingService {
         return clean;
     }
 
-    private List<String> personIds(List<ParticipantInput> inputs) {
-        return personIdsLenient(inputs);
-    }
-
-    /** People rules: by email when there is one, else by name; entries with neither are skipped. */
-    private List<String> personIdsLenient(List<ParticipantInput> inputs) {
-        Set<String> ids = new LinkedHashSet<>();
-        long now = clock.millis();
-        for (ParticipantInput input : inputs) {
-            String email = input.email() == null || input.email().isBlank() || !input.email().contains("@") ? null : input.email();
-            calendar.resolvePerson(input.name(), email, now).ifPresent(person -> ids.add(person.id()));
-        }
-        return new ArrayList<>(ids);
+    private static List<MeetingStore.PersonInput> people(List<ParticipantInput> inputs) {
+        return inputs.stream().map(input -> new MeetingStore.PersonInput(input.name(), input.email())).toList();
     }
 }

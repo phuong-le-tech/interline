@@ -127,7 +127,11 @@ public final class CalendarStore {
     }
 
     public Optional<EventRow> findEvent(String eventId) {
-        return database.read(db -> db.sql(EVENT_COLUMNS + "WHERE id = ?").param(eventId).query(CalendarStore::event).optional());
+        return database.read(db -> eventById(db, eventId));
+    }
+
+    static Optional<EventRow> eventById(JdbcClient db, String eventId) {
+        return db.sql(EVENT_COLUMNS + "WHERE id = ?").param(eventId).query(CalendarStore::event).optional();
     }
 
     /**
@@ -135,20 +139,23 @@ public final class CalendarStore {
      * email-less person with the same name (trimmed, case-insensitive), else a new one. Nothing to go on: empty.
      */
     public Optional<PersonRow> resolvePerson(String name, String email, long nowMs) {
+        return database.write(db -> resolvePerson(db, name, email, nowMs));
+    }
+
+    /** Same rules inside a transaction the caller already owns. */
+    static Optional<PersonRow> resolvePerson(JdbcClient db, String name, String email, long nowMs) {
         String cleanName = name == null ? "" : name.strip();
         boolean hasEmail = email != null && !email.isBlank();
         if (!hasEmail && cleanName.isEmpty()) return Optional.empty();
-        return Optional.of(database.write(db -> {
-            if (hasEmail) return upsertPerson(db, cleanName, email, nowMs);
-            String wanted = cleanName.toLowerCase(Locale.ROOT);
-            for (PersonRow person : db.sql(PERSON_COLUMNS + "WHERE email IS NULL ORDER BY created_at, rowid")
-                    .query(CalendarStore::person).list()) {
-                if (person.displayName().strip().toLowerCase(Locale.ROOT).equals(wanted)) return person;
-            }
-            String id = UuidV7.next(nowMs);
-            db.sql("INSERT INTO people(id, display_name, email, created_at) VALUES (?, ?, NULL, ?)").params(id, cleanName, nowMs).update();
-            return new PersonRow(id, cleanName, null, nowMs);
-        }));
+        if (hasEmail) return Optional.of(upsertPerson(db, cleanName, email, nowMs));
+        String wanted = cleanName.toLowerCase(Locale.ROOT);
+        for (PersonRow person : db.sql(PERSON_COLUMNS + "WHERE email IS NULL ORDER BY created_at, rowid")
+                .query(CalendarStore::person).list()) {
+            if (person.displayName().strip().toLowerCase(Locale.ROOT).equals(wanted)) return Optional.of(person);
+        }
+        String id = UuidV7.next(nowMs);
+        db.sql("INSERT INTO people(id, display_name, email, created_at) VALUES (?, ?, NULL, ?)").params(id, cleanName, nowMs).update();
+        return Optional.of(new PersonRow(id, cleanName, null, nowMs));
     }
 
     /** One transaction: the meeting's participants become exactly these people. */

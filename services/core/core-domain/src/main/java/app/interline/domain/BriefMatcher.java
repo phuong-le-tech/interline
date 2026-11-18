@@ -34,7 +34,8 @@ public final class BriefMatcher {
     public static String normalizeTitle(String title) {
         if (title == null) return "";
         String decomposed = Normalizer.normalize(title, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
-        return decomposed.toLowerCase(Locale.ROOT).strip().replaceAll("\\s+", " ");
+        // \p{Z} covers no-break and ideographic spaces that \s and strip() leave alone.
+        return decomposed.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{Z}]+", " ").strip();
     }
 
     /** The UID part of a recurring occurrence's external id ({@code UID#start}); null when there is none. */

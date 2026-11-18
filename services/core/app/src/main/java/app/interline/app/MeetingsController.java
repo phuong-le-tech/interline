@@ -55,10 +55,10 @@ class MeetingsController {
     Map<String, Object> brief(@PathVariable("id") String id) {
         MeetingService.Brief brief = meetings.brief(id);
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("meeting_id", brief.meetingId());
+        view.put("meetingId", brief.meetingId());
         view.put("participants", brief.participants().stream().map(MeetingsController::person).toList());
         view.put("related", brief.related().stream().map(MeetingsController::related).toList());
-        view.put("open_actions", brief.openActions().stream().map(MeetingsController::action).toList());
+        view.put("openActions", brief.openActions().stream().map(MeetingsController::action).toList());
         return view;
     }
 
@@ -68,9 +68,9 @@ class MeetingsController {
 
     /** Nullable fields stay in the JSON as null so clients can rely on the shape. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    record ActionView(String id, @com.fasterxml.jackson.annotation.JsonProperty("meeting_id") String meetingId, String text,
-                      @com.fasterxml.jackson.annotation.JsonProperty("owner_label") String ownerLabel,
-                      @com.fasterxml.jackson.annotation.JsonProperty("due_date") String dueDate) { }
+    record ActionView(String id, String meetingId, String text,
+                      String ownerLabel,
+                      String dueDate) { }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ProblemDetail unreadableBody() {
@@ -86,10 +86,10 @@ class MeetingsController {
 
     private static Map<String, Object> related(MeetingService.RelatedMeeting related) {
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("meeting_id", related.match().candidate().meetingId());
+        view.put("meetingId", related.match().candidate().meetingId());
         view.put("title", related.match().candidate().title());
         view.put("date", related.match().candidate().dateMs());
-        view.put("matched_by", related.match().reason().name().toLowerCase(java.util.Locale.ROOT));
+        view.put("matchedBy", related.match().reason().name().toLowerCase(java.util.Locale.ROOT));
         view.put("notes", related.notes());
         return view;
     }
