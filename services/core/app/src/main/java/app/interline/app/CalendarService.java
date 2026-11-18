@@ -27,7 +27,7 @@ final class CalendarService {
     private static final int MAX_WARNINGS = 100;
     private static final System.Logger LOG = System.getLogger(CalendarService.class.getName());
 
-    record SyncResult(int upserted, int removed, int skipped, List<String> warnings) { }
+    record SyncResult(int upserted, int removed, int skipped, List<String> warnings, boolean complete) { }
 
     private final CalendarStore store;
     private final SecretStore secrets;
@@ -116,11 +116,16 @@ final class CalendarService {
                     throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_source_changed",
                             "The calendar address changed during the sync; run it again");
                 }
-                counts = store.replaceIcsWindow(snapshot.events(), from, to, now);
+                // A partial snapshot only adds and updates: what it does not mention may simply not have been read.
+                counts = store.replaceIcsWindow(snapshot.events(), from, to, now, snapshot.complete());
             }
             List<String> warnings = snapshot.warnings().size() <= MAX_WARNINGS ? snapshot.warnings()
                     : snapshot.warnings().subList(0, MAX_WARNINGS);
-            return new SyncResult(counts.upserted(), counts.removed(), snapshot.skipped(), warnings);
+            if (!snapshot.complete() && warnings.stream().noneMatch(w -> w.toLowerCase(java.util.Locale.ROOT).contains("incomplete"))) {
+                warnings = new java.util.ArrayList<>(warnings);
+                warnings.add(0, "The calendar was only partly read (incomplete): nothing was removed");
+            }
+            return new SyncResult(counts.upserted(), counts.removed(), snapshot.skipped(), warnings, snapshot.complete());
         }
     }
 

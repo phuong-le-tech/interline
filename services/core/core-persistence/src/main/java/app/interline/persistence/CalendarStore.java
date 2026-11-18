@@ -36,6 +36,15 @@ public final class CalendarStore {
 
     /** One transaction: upsert the events, drop the absent ones of the window, keep the people in step. */
     public SyncCounts replaceIcsWindow(List<CalendarEvent> events, long windowStartMs, long windowEndMs, long nowMs) {
+        return replaceIcsWindow(events, windowStartMs, windowEndMs, nowMs, true);
+    }
+
+    /**
+     * Same, but with {@code deleteAbsent = false} nothing is ever removed: used when the snapshot is only a partial
+     * view of the feed, which must not wipe what is already stored.
+     */
+    public SyncCounts replaceIcsWindow(List<CalendarEvent> events, long windowStartMs, long windowEndMs, long nowMs,
+                                       boolean deleteAbsent) {
         return database.write(db -> {
             int upserted = 0;
             Set<String> present = new HashSet<>();
@@ -49,6 +58,7 @@ public final class CalendarStore {
                 }
             }
             int removed = 0;
+            if (!deleteAbsent) return new SyncCounts(upserted, 0);
             record WindowRow(String id, String externalId) { }
             List<WindowRow> inWindow = db.sql("SELECT id, external_id FROM calendar_events WHERE source = ? AND " + OVERLAPS)
                     .params(ICS, windowEndMs, windowStartMs)

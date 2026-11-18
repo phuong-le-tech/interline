@@ -59,6 +59,7 @@ class CalendarController {
         view.put("removed", result.removed());
         view.put("skipped", result.skipped());
         view.put("warnings", result.warnings());
+        view.put("complete", result.complete());
         return view;
     }
 

@@ -171,18 +171,51 @@ final class HttpIcsFetcher {
                 || host.endsWith(".internal")) {
             return true;
         }
-        if (host.chars().allMatch(Character::isDigit)) return true; // integer form of an IPv4 address
-        boolean ipv4 = host.matches("\\d{1,3}(\\.\\d{1,3}){3}");
+        if (numericLabelsOnly(host) && !canonicalDottedQuad(host)) return true; // integer, octal or hex IPv4 spellings
+        boolean ipv4 = canonicalDottedQuad(host);
         if (!ipv4 && !host.contains(":")) return false; // a name: only IP literals are resolved here, never DNS
         try {
-            java.net.InetAddress address = java.net.InetAddress.getByName(host);
-            byte[] bytes = address.getAddress();
-            boolean uniqueLocal = bytes.length == 16 && (bytes[0] & 0xFE) == 0xFC;
-            return address.isLoopbackAddress() || address.isLinkLocalAddress() || address.isSiteLocalAddress()
-                    || address.isAnyLocalAddress() || uniqueLocal;
+            return isReserved(java.net.InetAddress.getByName(host));
         } catch (java.net.UnknownHostException e) {
             return true;
         }
+    }
+
+    private static boolean numericLabelsOnly(String host) {
+        for (String label : host.split("\\.", -1)) {
+            if (!label.matches("0x[0-9a-f]+|\\d+")) return false;
+        }
+        return true;
+    }
+
+    private static boolean canonicalDottedQuad(String host) {
+        return host.matches("(0|[1-9]\\d{0,2})(\\.(0|[1-9]\\d{0,2})){3}")
+                && java.util.Arrays.stream(host.split("\\.")).allMatch(part -> Integer.parseInt(part) <= 255);
+    }
+
+    private static boolean isReserved(java.net.InetAddress address) {
+        byte[] b = address.getAddress();
+        if (address.isLoopbackAddress() || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                || address.isAnyLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        if (b.length == 4) {
+            int b0 = b[0] & 0xFF;
+            int b1 = b[1] & 0xFF;
+            boolean sharedAddressSpace = b0 == 100 && (b1 & 0xC0) == 64;      // 100.64.0.0/10
+            boolean benchmarking = b0 == 198 && (b1 & 0xFE) == 18;            // 198.18.0.0/15
+            boolean protocolAssignments = b0 == 192 && b1 == 0 && b[2] == 0;  // 192.0.0.0/24
+            return sharedAddressSpace || benchmarking || protocolAssignments;
+        }
+        boolean uniqueLocal = (b[0] & 0xFE) == 0xFC;                           // fc00::/7
+        boolean nat64 = b[0] == 0 && b[1] == 0x64 && (b[2] & 0xFF) == 0xFF && b[3] == (byte) 0x9B && zeros(b, 4, 12); // 64:ff9b::/96
+        boolean ipv4Compatible = zeros(b, 0, 12);                              // ::a.b.c.d
+        return uniqueLocal || nat64 || ipv4Compatible;
+    }
+
+    private static boolean zeros(byte[] bytes, int from, int to) {
+        for (int i = from; i < to; i++) if (bytes[i] != 0) return false;
+        return true;
     }
 
     private byte[] readCapped(InputStream in, String host) throws IOException, IcsFetchException {
