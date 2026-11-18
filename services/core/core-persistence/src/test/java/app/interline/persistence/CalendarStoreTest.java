@@ -154,8 +154,9 @@ class CalendarStoreTest {
 
         assertThat(counts).isEqualTo(new SyncCounts(0, 1));
         assertThat(externalIds("ics")).containsExactly("after", "before");
-        assertThat(database.read(j -> j.sql("SELECT synced_at FROM calendar_events WHERE id IN ('before','after')")
-                .query(Long.class).list())).containsOnly(1L);
+        java.util.List<Long> syncedAt = database.read(j -> j.sql("SELECT synced_at FROM calendar_events WHERE id IN ('before','after')")
+                .query(Long.class).list());
+        assertThat(syncedAt).containsOnly(1L);
     }
 
     @Test
@@ -247,8 +248,9 @@ class CalendarStoreTest {
 
         assertThat(counts).isEqualTo(new SyncCounts(1, 0));
         assertThat(count("calendar_events")).isEqualTo(2);
-        assertThat(database.read(j -> j.sql("SELECT title FROM calendar_events WHERE id = 'agent-row'")
-                .query(String.class).single())).isEqualTo("raw");
+        String agentTitle = database.read(j -> j.sql("SELECT title FROM calendar_events WHERE id = 'agent-row'")
+                .query(String.class).single());
+        assertThat(agentTitle).isEqualTo("raw");
     }
 
     @Test
