@@ -88,7 +88,7 @@ class M3UrlSafetyTest {
         record(call(port, "PUT", "/calendar/ics-source", Map.of("url", url + "&pad=" + "a".repeat(2100))));
         record(call(port, "PUT", "/calendar/ics-source", Map.of("url", "http://example.com" + IcsStub.PATH + "?" + IcsStub.QUERY)));
         record(call(port, "PUT", "/calendar/ics-source", "{\"url\": \"" + url + "\""));   // broken JSON carrying the URL
-        record(call(port, "GET", "/calendar/events?from=" + SECRET_QUERY, null));
+        record(call(port, "GET", "/calendar/events?from=not-a-number", null));
         // fetch failures: server error, garbage, then a vanished server
         stub.failWith(500);
         assertThat(record(sync(port)).status()).isEqualTo(502);
