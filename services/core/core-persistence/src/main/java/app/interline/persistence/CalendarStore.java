@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -125,6 +126,50 @@ public final class CalendarStore {
         return existing;
     }
 
+    public Optional<EventRow> findEvent(String eventId) {
+        return database.read(db -> eventById(db, eventId));
+    }
+
+    static Optional<EventRow> eventById(JdbcClient db, String eventId) {
+        return db.sql(EVENT_COLUMNS + "WHERE id = ?").param(eventId).query(CalendarStore::event).optional();
+    }
+
+    /**
+     * The person for a name and an optional email. With an email: by lower-cased email. Without: an existing
+     * email-less person with the same name (trimmed, case-insensitive), else a new one. Nothing to go on: empty.
+     */
+    public Optional<PersonRow> resolvePerson(String name, String email, long nowMs) {
+        return database.write(db -> resolvePerson(db, name, email, nowMs));
+    }
+
+    /** Same rules inside a transaction the caller already owns. */
+    static Optional<PersonRow> resolvePerson(JdbcClient db, String name, String email, long nowMs) {
+        String cleanName = name == null ? "" : name.strip();
+        boolean hasEmail = email != null && !email.isBlank();
+        if (!hasEmail && cleanName.isEmpty()) return Optional.empty();
+        if (hasEmail) return Optional.of(upsertPerson(db, cleanName, email, nowMs));
+        String wanted = cleanName.toLowerCase(Locale.ROOT);
+        for (PersonRow person : db.sql(PERSON_COLUMNS + "WHERE email IS NULL ORDER BY created_at, rowid")
+                .query(CalendarStore::person).list()) {
+            if (person.displayName().strip().toLowerCase(Locale.ROOT).equals(wanted)) return Optional.of(person);
+        }
+        String id = UuidV7.next(nowMs);
+        db.sql("INSERT INTO people(id, display_name, email, created_at) VALUES (?, ?, NULL, ?)").params(id, cleanName, nowMs).update();
+        return Optional.of(new PersonRow(id, cleanName, null, nowMs));
+    }
+
+    /** One transaction: the meeting's participants become exactly these people. */
+    public void replaceParticipants(String meetingId, List<String> personIds) {
+        database.write(db -> {
+            db.sql("DELETE FROM meeting_participants WHERE meeting_id = ?").param(meetingId).update();
+            for (String personId : personIds) {
+                db.sql("INSERT OR IGNORE INTO meeting_participants(meeting_id, person_id) VALUES (?, ?)")
+                        .params(meetingId, personId).update();
+            }
+            return null;
+        });
+    }
+
     public List<PersonRow> listPeople() {
         return database.read(db -> db.sql(PERSON_COLUMNS + "ORDER BY created_at, rowid").query(CalendarStore::person).list());
     }
@@ -135,6 +180,13 @@ public final class CalendarStore {
     }
 
     public List<PersonRow> listParticipants(String meetingId) {
+        return database.read(db -> participantsOf(db, meetingId));
+    }
+
+    static List<PersonRow> participantsOf(JdbcClient db, String meetingId) {
+        return db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
+                        + "JOIN meeting_participants mp ON mp.person_id = p.id WHERE mp.meeting_id = ? ORDER BY p.created_at, p.rowid")
+                .param(meetingId).query(CalendarStore::person).list();
         return database.read(db -> db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
                         + "JOIN meeting_participants mp ON mp.person_id = p.id WHERE mp.meeting_id = ? ORDER BY p.created_at, p.rowid")
                 .param(meetingId).query(CalendarStore::person).list());
