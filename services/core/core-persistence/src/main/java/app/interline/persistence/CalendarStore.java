@@ -187,6 +187,9 @@ public final class CalendarStore {
         return db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
                         + "JOIN meeting_participants mp ON mp.person_id = p.id WHERE mp.meeting_id = ? ORDER BY p.created_at, p.rowid")
                 .param(meetingId).query(CalendarStore::person).list();
+        return database.read(db -> db.sql("SELECT p.id, p.display_name, p.email, p.created_at FROM people p "
+                        + "JOIN meeting_participants mp ON mp.person_id = p.id WHERE mp.meeting_id = ? ORDER BY p.created_at, p.rowid")
+                .param(meetingId).query(CalendarStore::person).list());
     }
 
     private static EventRow event(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
