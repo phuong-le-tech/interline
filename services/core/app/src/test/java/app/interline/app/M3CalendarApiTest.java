@@ -295,7 +295,10 @@ class M3CalendarApiTest {
         stub.serve(threeEventsInWindow());
         syncOk();
 
-        stub.serve(calendar(vevent("uid-a", "First", NOW + HOUR, NOW + 2 * HOUR), vevent("uid-c", "Third", NOW + 10 * DAY, NOW + 10 * DAY + HOUR)));
+        stub.serve(calendar(vevent("uid-a", "First", NOW + HOUR, NOW + 2 * HOUR,
+                "ORGANIZER;CN=Olive Organizer:mailto:Olive@Example.com",
+                "ATTENDEE;CN=Alice Example:mailto:alice@example.com",
+                "URL:https://meet.example.com/abc"), vevent("uid-c", "Third", NOW + 10 * DAY, NOW + 10 * DAY + HOUR)));
         JsonNode result = syncOk();
 
         assertThat(result.path("removed").asInt()).isEqualTo(1);
