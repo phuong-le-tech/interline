@@ -56,8 +56,9 @@ final class HttpIcsFetcher {
         }
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         if (scheme.equals("webcal")) {
+            // Keep the raw text after the scheme: rebuilding from decoded parts would encode it twice.
             try {
-                uri = new URI("https", uri.getRawAuthority(), uri.getRawPath(), uri.getRawQuery(), null);
+                uri = new URI("https" + url.strip().substring("webcal".length()));
             } catch (URISyntaxException e) {
                 throw new IcsFetchException("The calendar address is not a valid URL");
             }
@@ -142,10 +143,46 @@ final class HttpIcsFetcher {
             throw new IcsFetchException("Invalid redirect from " + from.getHost());
         }
         URI checked = normalize(target.toString());
-        if ("https".equalsIgnoreCase(from.getScheme()) && !"https".equalsIgnoreCase(checked.getScheme())) {
+        checkRedirect(from, checked, allowLoopbackHttp);
+        return checked;
+    }
+
+    /**
+     * Policy for a redirect hop (the address the user typed is not subject to the address ban): never from https
+     * to http, https otherwise, and no hop to a local or private destination. Messages never carry the URL.
+     * DNS rebinding (a public name resolving to a private address) is out of scope.
+     */
+    static void checkRedirect(URI from, URI to, boolean allowLoopbackHttp) throws IcsFetchException {
+        String scheme = to.getScheme() == null ? "" : to.getScheme().toLowerCase(Locale.ROOT);
+        if ("https".equalsIgnoreCase(from.getScheme()) && !scheme.equals("https")) {
             throw new IcsFetchException("Refused a redirect from https to http");
         }
-        return checked;
+        String host = to.getHost() == null ? "" : to.getHost();
+        boolean testLoopback = allowLoopbackHttp && scheme.equals("http") && LOOPBACK.equals(host);
+        if (!scheme.equals("https") && !testLoopback) throw new IcsFetchException("Refused a redirect to a non-https address");
+        if (!testLoopback && isLocalOrPrivate(host)) throw new IcsFetchException("Refused a redirect to a local or private address");
+    }
+
+    private static boolean isLocalOrPrivate(String rawHost) {
+        String host = rawHost.toLowerCase(Locale.ROOT);
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+        while (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+        if (host.isEmpty() || host.equals("localhost") || host.endsWith(".localhost") || host.endsWith(".local")
+                || host.endsWith(".internal")) {
+            return true;
+        }
+        if (host.chars().allMatch(Character::isDigit)) return true; // integer form of an IPv4 address
+        boolean ipv4 = host.matches("\\d{1,3}(\\.\\d{1,3}){3}");
+        if (!ipv4 && !host.contains(":")) return false; // a name: only IP literals are resolved here, never DNS
+        try {
+            java.net.InetAddress address = java.net.InetAddress.getByName(host);
+            byte[] bytes = address.getAddress();
+            boolean uniqueLocal = bytes.length == 16 && (bytes[0] & 0xFE) == 0xFC;
+            return address.isLoopbackAddress() || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                    || address.isAnyLocalAddress() || uniqueLocal;
+        } catch (java.net.UnknownHostException e) {
+            return true;
+        }
     }
 
     private byte[] readCapped(InputStream in, String host) throws IOException, IcsFetchException {

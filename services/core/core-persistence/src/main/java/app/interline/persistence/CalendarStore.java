@@ -49,12 +49,13 @@ public final class CalendarStore {
                 }
             }
             int removed = 0;
-            List<String> windowIds = db.sql("SELECT external_id FROM calendar_events WHERE source = ? AND " + OVERLAPS)
-                    .params(ICS, windowEndMs, windowStartMs).query(String.class).list();
-            for (String externalId : windowIds) {
-                if (externalId != null && present.contains(externalId)) continue;
-                removed += db.sql("DELETE FROM calendar_events WHERE source = ? AND external_id IS ?")
-                        .params(ICS, externalId).update();
+            record WindowRow(String id, String externalId) { }
+            List<WindowRow> inWindow = db.sql("SELECT id, external_id FROM calendar_events WHERE source = ? AND " + OVERLAPS)
+                    .params(ICS, windowEndMs, windowStartMs)
+                    .query((rs, rowNum) -> new WindowRow(rs.getString(1), rs.getString(2))).list();
+            for (WindowRow row : inWindow) {
+                if (row.externalId() != null && present.contains(row.externalId())) continue;
+                removed += db.sql("DELETE FROM calendar_events WHERE id = ?").param(row.id()).update();
             }
             return new SyncCounts(upserted, removed);
         });

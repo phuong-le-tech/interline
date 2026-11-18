@@ -26,7 +26,12 @@ final class IcsCalendarSource implements CalendarSource {
     @Override public CalendarSnapshot fetch(long windowStartMs, long windowEndMs) {
         String url = secrets.get(ACCOUNT).orElseThrow(() -> new CalendarUnavailableException("No calendar address is configured"));
         try {
-            return IcsParser.parse(fetcher.fetch(url), zone, windowStartMs, windowEndMs);
+            byte[] body = fetcher.fetch(url);
+            // A sign-in page, a blank or a truncated answer must not look like "the calendar is empty".
+            if (!IcsParser.isCompleteCalendar(body)) {
+                throw new CalendarUnavailableException("The calendar address did not return a valid calendar");
+            }
+            return IcsParser.parse(body, zone, windowStartMs, windowEndMs);
         } catch (IcsFetchException e) {
             throw new CalendarUnavailableException(e.getMessage());
         }

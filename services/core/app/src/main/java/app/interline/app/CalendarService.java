@@ -2,6 +2,7 @@ package app.interline.app;
 
 import app.interline.app.HttpIcsFetcher.IcsFetchException;
 import app.interline.domain.CalendarSnapshot;
+import app.interline.domain.CalendarSource;
 import app.interline.domain.CalendarUnavailableException;
 import app.interline.domain.SecretStore;
 import app.interline.persistence.CalendarStore;
@@ -31,10 +32,15 @@ final class CalendarService {
     private final CalendarStore store;
     private final SecretStore secrets;
     private final HttpIcsFetcher fetcher;
-    private final IcsCalendarSource source;
+    private final CalendarSource source;
+    /** Serialises syncs. */
+    private final Object syncLock = new Object();
+    /** Guards the source generation and every write that depends on it. */
+    private final Object stateLock = new Object();
+    private long generation;
     private final Clock clock;
 
-    CalendarService(CalendarStore store, SecretStore secrets, HttpIcsFetcher fetcher, IcsCalendarSource source, Clock clock) {
+    CalendarService(CalendarStore store, SecretStore secrets, HttpIcsFetcher fetcher, CalendarSource source, Clock clock) {
         this.store = store;
         this.secrets = secrets;
         this.fetcher = fetcher;
@@ -49,10 +55,13 @@ final class CalendarService {
         } catch (IcsFetchException e) {
             throw ApiProblems.badRequest(e.getMessage());
         }
-        try {
-            secrets.put(IcsCalendarSource.ACCOUNT, url.strip());
-        } catch (IllegalStateException e) {
-            throw secretStoreUnavailable(e);
+        synchronized (stateLock) {
+            try {
+                secrets.put(IcsCalendarSource.ACCOUNT, url.strip());
+            } catch (IllegalStateException e) {
+                throw secretStoreUnavailable(e);
+            }
+            generation++;
         }
         LOG.log(System.Logger.Level.INFO, "calendar source configured for host {0}", uri.getHost());
     }
@@ -71,30 +80,48 @@ final class CalendarService {
     boolean configured() { return address().isPresent(); }
 
     void removeSource() {
-        try {
-            secrets.delete(IcsCalendarSource.ACCOUNT);
-        } catch (IllegalStateException e) {
-            throw secretStoreUnavailable(e);
+        synchronized (stateLock) {
+            try {
+                secrets.delete(IcsCalendarSource.ACCOUNT);
+            } catch (IllegalStateException e) {
+                throw secretStoreUnavailable(e);
+            }
+            generation++;
+            store.deleteIcsEvents();
         }
-        store.deleteIcsEvents();
     }
 
-    synchronized SyncResult sync() {
-        if (!configured()) throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_not_configured", "No calendar address is configured");
-        long now = clock.millis();
-        long from = now - WINDOW_BEHIND.toMillis();
-        long to = now + WINDOW_AHEAD.toMillis();
-        CalendarSnapshot snapshot;
-        try {
-            snapshot = source.fetch(from, to);
-        } catch (CalendarUnavailableException e) {
-            LOG.log(System.Logger.Level.WARNING, "calendar sync failed: {0}", e.getMessage());
-            throw ApiProblems.of(HttpStatus.BAD_GATEWAY, "calendar_fetch_failed", e.getMessage());
+    /**
+     * Fetches without holding the state lock, then writes only if the source was not replaced or removed meanwhile:
+     * a stale snapshot must never bring back events of a source the user just dropped.
+     */
+    SyncResult sync() {
+        synchronized (syncLock) {
+            if (!configured()) throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_not_configured", "No calendar address is configured");
+            long startedWith;
+            synchronized (stateLock) { startedWith = generation; }
+            long now = clock.millis();
+            long from = now - WINDOW_BEHIND.toMillis();
+            long to = now + WINDOW_AHEAD.toMillis();
+            CalendarSnapshot snapshot;
+            try {
+                snapshot = source.fetch(from, to);
+            } catch (CalendarUnavailableException e) {
+                LOG.log(System.Logger.Level.WARNING, "calendar sync failed: {0}", e.getMessage());
+                throw ApiProblems.of(HttpStatus.BAD_GATEWAY, "calendar_fetch_failed", e.getMessage());
+            }
+            SyncCounts counts;
+            synchronized (stateLock) {
+                if (generation != startedWith) {
+                    throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_source_changed",
+                            "The calendar address changed during the sync; run it again");
+                }
+                counts = store.replaceIcsWindow(snapshot.events(), from, to, now);
+            }
+            List<String> warnings = snapshot.warnings().size() <= MAX_WARNINGS ? snapshot.warnings()
+                    : snapshot.warnings().subList(0, MAX_WARNINGS);
+            return new SyncResult(counts.upserted(), counts.removed(), snapshot.skipped(), warnings);
         }
-        SyncCounts counts = store.replaceIcsWindow(snapshot.events(), from, to, now);
-        List<String> warnings = snapshot.warnings().size() <= MAX_WARNINGS ? snapshot.warnings()
-                : snapshot.warnings().subList(0, MAX_WARNINGS);
-        return new SyncResult(counts.upserted(), counts.removed(), snapshot.skipped(), warnings);
     }
 
     List<EventRow> events(Long from, Long to) {
@@ -102,7 +129,13 @@ final class CalendarService {
         long start = from != null ? from : now - WINDOW_BEHIND.toMillis();
         long end = to != null ? to : now + WINDOW_AHEAD.toMillis();
         if (end <= start) throw ApiProblems.badRequest("to must be after from");
-        if (end - start > MAX_QUERY_SPAN.toMillis()) throw ApiProblems.badRequest("the window must not exceed 31 days");
+        long span;
+        try {
+            span = Math.subtractExact(end, start);
+        } catch (ArithmeticException e) {
+            throw ApiProblems.badRequest("the window must not exceed 31 days");
+        }
+        if (span > MAX_QUERY_SPAN.toMillis()) throw ApiProblems.badRequest("the window must not exceed 31 days");
         return store.listEvents(start, end);
     }
 

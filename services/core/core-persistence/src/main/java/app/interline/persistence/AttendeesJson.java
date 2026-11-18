@@ -7,6 +7,8 @@ import java.util.List;
 
 /** The {@code attendees} column: a JSON array of {@code {"name":...,"email":...}} with null for a missing value. */
 final class AttendeesJson {
+    private static final System.Logger LOG = System.getLogger(AttendeesJson.class.getName());
+
     private AttendeesJson() { }
 
     static String encode(List<Attendee> attendees) {
@@ -60,7 +62,9 @@ final class AttendeesJson {
             } while (in.accept(','));
             in.expect(']');
             return result;
-        } catch (IllegalStateException e) {
+        } catch (RuntimeException e) {
+            // Never log the column: it may hold personal data. The listing still works without attendees.
+            LOG.log(System.Logger.Level.WARNING, "ignoring an unreadable attendees column ({0})", e.getClass().getSimpleName());
             return new ArrayList<>();
         }
     }
