@@ -95,7 +95,7 @@ class M3UrlSafetyTest {
         byte[] garbage = new byte[8192];
         new Random(7).nextBytes(garbage);
         stub.serveBytes(garbage);
-        assertThat(record(sync(port)).status()).isEqualTo(200);
+        assertThat(record(sync(port)).status()).isEqualTo(502);
         stub.serve(feed());
         record(sync(port));
         int serverPort = stub.port();
@@ -173,5 +173,44 @@ class M3UrlSafetyTest {
         assertThat(probe.observations().stream().filter(o -> o.toString().contains(SECRET_PATH_TOKEN)).map(o -> o.path("type").asText()).toList())
                 .isNotEmpty().allSatisfy(type -> assertThat(type).isIn("secret.put", "secret.get"));
         assertThat(responses).allSatisfy(r -> assertNoSecret(r.body(), "response"));
+    }
+
+    @Test void AC8r1_invalidJsonBodiesCarryingATokenNeverLeak_notInResponsesTheDatabaseOrTheLogs() throws Exception {
+        String fakeToken = "FAKE-TOKEN-123";
+        String fakeKey = "FAKE-KEY-456";
+        List<Resp> bad = new ArrayList<>();
+        // unterminated JSON
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "{\"url\":\"https://example.com/private/" + fakeToken + ".ics?key=" + fakeKey + "\"")));
+        // unterminated inside the string value
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "{\"url\":\"https://example.com/private/" + fakeToken + ".ics?key=" + fakeKey)));
+        // type error: an array where a string is expected
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "{\"url\":[\"https://x/" + fakeToken + "\"]}")));
+        // type error: an object, and a number next to the token
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "{\"url\":{\"k\":\"https://x/" + fakeToken + "?key=" + fakeKey + "\"}}")));
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "{\"url\":12345,\"extra\":\"" + fakeToken + "\"}")));
+        // not JSON at all
+        bad.add(record(call(port, "PUT", "/calendar/ics-source", "url=https://example.com/" + fakeToken + "?key=" + fakeKey)));
+        // a valid request afterwards still works and nothing from the bad ones was stored
+        assertThat(record(putSource(port, stub.url())).status()).isEqualTo(204);
+        record(call(port, "GET", "/calendar/ics-source", null));
+
+        assertThat(bad).allSatisfy(r -> assertThat(r.status()).as(r.body()).isBetween(400, 499));
+        context.close();
+
+        assertThat(responses).allSatisfy(r -> assertThat(r.body()).as("response body: " + r.body())
+                .doesNotContain(fakeToken).doesNotContain(fakeKey));
+        assertNoFake(new String(Files.readAllBytes(data.resolve("db.sqlite")), StandardCharsets.ISO_8859_1), "db.sqlite", fakeToken, fakeKey);
+        Path wal = data.resolve("db.sqlite-wal");
+        if (Files.exists(wal)) {
+            assertNoFake(new String(Files.readAllBytes(wal), StandardCharsets.ISO_8859_1), "db.sqlite-wal", fakeToken, fakeKey);
+        }
+        try (Stream<Path> logs = Files.walk(data.resolve("logs"))) {
+            assertThat(logs.filter(Files::isRegularFile).toList()).isNotEmpty().allSatisfy(file ->
+                    assertNoFake(Files.readString(file, StandardCharsets.ISO_8859_1), "log " + file.getFileName(), fakeToken, fakeKey));
+        }
+    }
+
+    private static void assertNoFake(String text, String what, String fakeToken, String fakeKey) {
+        assertThat(text).as(what).doesNotContain(fakeToken).doesNotContain(fakeKey);
     }
 }

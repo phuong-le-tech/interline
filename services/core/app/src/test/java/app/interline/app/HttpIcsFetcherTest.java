@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** AC9: the fetcher refuses unsafe schemes and redirects before connecting, caps size and time, and never leaks the URL. */
@@ -306,5 +308,129 @@ class HttpIcsFetcherTest {
         }
         assertThat(failures).hasSize(3).allSatisfy(HttpIcsFetcherTest::assertSafe);
         assertThat(failures).allSatisfy(e -> assertThat(e.getMessage()).isNotBlank());
+    }
+
+    // ---- review round 1, item 13: redirect policy -------------------------------------------------------------------
+
+    private static final String TAIL = "/private/" + TOKEN + ".ics?key=" + QUERY;
+    private static final URI HTTPS_FROM = URI.create("https://example.com/start" + TAIL);
+    private static final URI LOOPBACK_FROM = URI.create("http://127.0.0.1:8080/start" + TAIL);
+
+    private static void assertCheckRefused(URI from, String to, boolean flag) {
+        assertThatThrownBy(() -> HttpIcsFetcher.checkRedirect(from, URI.create(to), flag))
+                .as("redirect %s -> %s (flag=%s)", from.getScheme(), to, flag)
+                .isInstanceOf(IcsFetchException.class).satisfies(HttpIcsFetcherTest::assertSafe);
+    }
+
+    private static void assertCheckAllowed(URI from, String to, boolean flag) {
+        assertThatCode(() -> HttpIcsFetcher.checkRedirect(from, URI.create(to), flag))
+                .as("redirect %s -> %s (flag=%s)", from.getScheme(), to, flag).doesNotThrowAnyException();
+    }
+
+    private static final List<String> BANNED_HOSTS = List.of(
+            "localhost", "LOCALHOST", "foo.localhost", "a.b.localhost", "printer.local", "nas.home.local", "db.internal", "svc.prod.internal",
+            "127.0.0.1", "127.1.2.3", "127.255.255.254", "[::1]", "169.254.0.1", "169.254.169.254", "169.254.255.254", "[fe80::1]",
+            "[fe80::abcd:1234]", "[febf::1]", "10.0.0.1", "10.255.255.255", "172.16.0.1", "172.20.1.1", "172.31.255.255", "192.168.0.1",
+            "192.168.1.10", "192.168.255.255", "[fc00::1]", "[fd12:3456:789a::1]", "0.0.0.0");
+
+    @Test void AC9r1_aRedirectFromHttpsToHttpIsRefusedAlways() {
+        for (boolean flag : new boolean[]{false, true}) {
+            assertCheckRefused(HTTPS_FROM, "http://example.com" + TAIL, flag);
+            assertCheckRefused(HTTPS_FROM, "http://127.0.0.1:8080" + TAIL, flag);
+            assertCheckRefused(URI.create("https://127.0.0.1:8443/x"), "http://127.0.0.1:8080" + TAIL, flag);
+        }
+    }
+
+    @Test void AC9r1_aLoopbackHttpToLoopbackHttpRedirectIsAllowedOnlyWithTheFlag() {
+        assertCheckAllowed(LOOPBACK_FROM, "http://127.0.0.1:8080/next" + TAIL, true);
+        assertCheckAllowed(LOOPBACK_FROM, "http://127.0.0.1:9999/next", true);
+        assertCheckRefused(LOOPBACK_FROM, "http://127.0.0.1:8080/next" + TAIL, false);
+    }
+
+    @Test void AC9r1_aRedirectToAPublicHttpsHostIsAllowed() {
+        for (boolean flag : new boolean[]{false, true}) {
+            assertCheckAllowed(HTTPS_FROM, "https://example.com/other" + TAIL, flag);
+            assertCheckAllowed(HTTPS_FROM, "https://calendar.google.com/calendar/ical/x/basic.ics", flag);
+            assertCheckAllowed(HTTPS_FROM, "https://93.184.216.34/cal" + TAIL, flag);
+            assertCheckAllowed(HTTPS_FROM, "https://example.com:8443/cal" + TAIL, flag);
+        }
+        assertCheckAllowed(LOOPBACK_FROM, "https://example.com/cal" + TAIL, true);
+        assertCheckAllowed(LOOPBACK_FROM, "https://93.184.216.34/cal" + TAIL, true);
+    }
+
+    @Test void AC9r1_theBoundariesOfThePrivateRangesAreExact() {
+        for (String host : List.of("172.15.255.255", "172.32.0.1", "11.0.0.1", "9.255.255.255", "192.167.1.1", "192.169.1.1",
+                "169.253.1.1", "169.255.1.1", "126.255.255.255", "128.0.0.1", "notlocalhost.com", "mylocal.com", "localhost.example.com",
+                "internal.example.com")) {
+            assertCheckAllowed(HTTPS_FROM, "https://" + host + "/cal" + TAIL, false);
+        }
+    }
+
+    @Test void AC9r1_aRedirectTargetOnALocalOrPrivateAddressIsRefused_overHttpsInBothModes() {
+        for (boolean flag : new boolean[]{false, true}) {
+            for (String host : BANNED_HOSTS) {
+                assertCheckRefused(HTTPS_FROM, "https://" + host + "/cal" + TAIL, flag);
+                assertCheckRefused(HTTPS_FROM, "https://" + host + ":8443/cal" + TAIL, flag);
+                assertCheckRefused(LOOPBACK_FROM, "https://" + host + "/cal" + TAIL, flag);
+            }
+        }
+    }
+
+    @Test void AC9r1_aRedirectTargetOnALocalOrPrivateAddressIsRefused_overHttpToo() {
+        for (String host : BANNED_HOSTS) {
+            assertCheckRefused(LOOPBACK_FROM, "http://" + host + "/cal" + TAIL, false);
+            if (!host.equals("127.0.0.1")) assertCheckRefused(LOOPBACK_FROM, "http://" + host + ":8080/cal" + TAIL, true);
+        }
+    }
+
+    @Test void AC9r1_withTheFlagOnly127001OverHttpStaysAllowed() {
+        assertCheckAllowed(LOOPBACK_FROM, "http://127.0.0.1:8080/ok" + TAIL, true);
+        for (String host : List.of("localhost", "127.0.0.2", "[::1]", "0.0.0.0", "169.254.169.254", "10.0.0.1", "192.168.1.1", "172.16.0.1",
+                "x.localhost", "x.local", "x.internal", "[fe80::1]", "[fc00::1]")) {
+            assertCheckRefused(LOOPBACK_FROM, "http://" + host + ":8080/no" + TAIL, true);
+        }
+    }
+
+    @Test void AC9r1_refusalMessagesNeverContainThePathTheQueryOrTheToken() {
+        for (String to : List.of("http://example.com" + TAIL, "https://169.254.169.254" + TAIL, "https://localhost" + TAIL,
+                "https://[::1]" + TAIL, "https://10.1.2.3" + TAIL, "https://printer.local" + TAIL, "https://a.internal" + TAIL)) {
+            Throwable failure = org.assertj.core.api.Assertions.catchThrowable(() -> HttpIcsFetcher.checkRedirect(HTTPS_FROM, URI.create(to), true));
+            assertThat(failure).isInstanceOf(IcsFetchException.class);
+            assertThat(failure.getMessage()).isNotBlank().doesNotContain(TOKEN).doesNotContain(QUERY).doesNotContain("/private")
+                    .doesNotContain(".ics").doesNotContain("key=");
+            assertSafe(failure);
+        }
+    }
+
+    @Test void AC9r1_theFirstUserTypedUrlIsNotSubjectToThePrivateAddressBan() throws Exception {
+        HttpIcsFetcher fetcher = new HttpIcsFetcher(false);
+        assertThat(fetcher.normalize("https://192.168.1.10/cal.ics").getHost()).isEqualTo("192.168.1.10");
+        assertThat(fetcher.normalize("https://10.0.0.5/cal.ics").getHost()).isEqualTo("10.0.0.5");
+        assertThat(fetcher.normalize("https://nas.local/cal.ics").getHost()).isEqualTo("nas.local");
+        assertThat(fetcher.normalize("https://localhost:8443/cal.ics").getHost()).isEqualTo("localhost");
+    }
+
+    @Test void AC9r1_aRedirectToTheCloudMetadataAddressFailsQuicklyEndToEnd() {
+        context("/meta", ex -> redirect(ex, "https://169.254.169.254/latest/meta-data/"));
+        long before = System.nanoTime();
+
+        assertThatThrownBy(() -> new HttpIcsFetcher(true, Duration.ofSeconds(5), Duration.ofSeconds(10), 1 << 20)
+                .fetch("http://127.0.0.1:" + port() + "/meta/" + TOKEN + ".ics?key=" + QUERY))
+                .isInstanceOf(IcsFetchException.class).satisfies(HttpIcsFetcherTest::assertSafe);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - before)).as("refused without connecting out").isLessThan(Duration.ofSeconds(4));
+        assertThat(hits).as("only the first hop was requested").hasValue(1);
+    }
+
+    @Test void AC9r1_aRedirectToAPrivateOrLocalNameFailsEndToEnd_withoutFollowing() {
+        for (String target : List.of("https://10.0.0.1/cal", "https://localhost/cal", "https://printer.local/cal", "https://[::1]/cal",
+                "https://192.168.1.1/cal", "https://db.internal/cal")) {
+            hits.set(0);
+            String path = "/p" + Math.abs(target.hashCode());
+            context(path, ex -> redirect(ex, target));
+            assertRefused(new HttpIcsFetcher(true, Duration.ofSeconds(5), Duration.ofSeconds(10), 1 << 20),
+                    "http://127.0.0.1:" + port() + path);
+            assertThat(hits).as("redirect to %s", target).hasValue(1);
+        }
     }
 }

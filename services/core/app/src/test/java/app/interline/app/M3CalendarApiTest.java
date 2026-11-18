@@ -394,41 +394,39 @@ class M3CalendarApiTest {
 
     // ---- AC6: garbage and limits -----------------------------------------------------------------------------------
 
-    @Test void AC6_aGarbageBodyGives200NotA500() {
+    /** Stores the three good events, then serves {@code body} and expects 502 calendar_fetch_failed with the events untouched. */
+    private void assertInvalidSnapshotRefused(byte[] body) {
         configure();
+        stub.serve(threeEventsInWindow());
+        assertThat(syncOk().path("upserted").asInt()).isEqualTo(3);
+        List<String> before = titles(eventsOk());
+        assertThat(before).hasSize(3);
+
+        stub.serveBytes(body);
+        Resp response = sync(port);
+
+        assertProblem(response, 502, "calendar_fetch_failed");
+        assertThat(response.body()).doesNotContain(SECRET_PATH_TOKEN).doesNotContain(SECRET_QUERY).doesNotContain("/private");
+        assertThat(titles(eventsOk())).as("stored events untouched").isEqualTo(before);
+    }
+
+    @Test void AC6_aGarbageBodyGives502AndKeepsTheStoredEvents() {
         byte[] garbage = new byte[64 * 1024];
         new Random(42).nextBytes(garbage);
-        stub.serveBytes(garbage);
-
-        Resp response = sync(port);
-
-        assertThat(response.status()).as(response.body()).isEqualTo(200);
-        assertThat(response.json().path("upserted").asInt()).isZero();
-        assertThat(response.json().path("warnings").isArray()).isTrue();
-        assertThat(eventsOk()).isEmpty();
+        assertInvalidSnapshotRefused(garbage);
     }
 
-    @Test void AC6_textThatIsNotICalendarGives200() {
-        configure();
-        stub.serve("<html><body>Please sign in</body></html>");
-        Resp response = sync(port);
-        assertThat(response.status()).as(response.body()).isEqualTo(200);
-        assertThat(response.json().path("upserted").asInt()).isZero();
+    @Test void AC6_textThatIsNotICalendarGives502AndKeepsTheStoredEvents() {
+        assertInvalidSnapshotRefused("<html><body>Please sign in</body></html>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    @Test void AC6_anEmptyBodyGives200() {
-        configure();
-        stub.serveBytes(new byte[0]);
-        Resp response = sync(port);
-        assertThat(response.status()).as(response.body()).isEqualTo(200);
-        assertThat(response.json().path("upserted").asInt()).isZero();
+    @Test void AC6_anEmptyBodyGives502AndKeepsTheStoredEvents() {
+        assertInvalidSnapshotRefused(new byte[0]);
     }
 
-    @Test void AC6_aTruncatedFeedGives200() {
-        configure();
+    @Test void AC6_aTruncatedFeedGives502AndKeepsTheStoredEvents() {
         String full = threeEventsInWindow();
-        stub.serve(full.substring(0, full.length() / 2));
-        assertThat(sync(port).status()).isEqualTo(200);
+        assertInvalidSnapshotRefused(full.substring(0, full.length() / 2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     @Test void AC6_aMalformedEventIsSkippedAndCounted_theGoodOnesAreStored() {
