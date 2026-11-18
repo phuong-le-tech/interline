@@ -4,6 +4,7 @@ import app.interline.agent.AgentPlatformCapabilities;
 import app.interline.ai.ConnectionTester;
 import app.interline.persistence.AiStore;
 import app.interline.persistence.CalendarStore;
+import app.interline.persistence.MeetingStore;
 import app.interline.persistence.CaptureStore;
 import app.interline.persistence.NoteStore;
 import app.interline.persistence.ProviderStore;
@@ -44,6 +45,12 @@ class CoreConfiguration {
     @Bean SearchStore searchStore(DurableCaptureIngest ingest) { return new SearchStore(ingest.database()); }
 
     @Bean CalendarStore calendarStore(DurableCaptureIngest ingest) { return new CalendarStore(ingest.database()); }
+
+    @Bean MeetingStore meetingStore(DurableCaptureIngest ingest) { return new MeetingStore(ingest.database()); }
+
+    @Bean MeetingService meetingService(MeetingStore meetings, CalendarStore calendar, Clock clock) {
+        return new MeetingService(meetings, calendar, clock);
+    }
 
     @Bean CalendarService calendarService(CalendarStore store, AgentSecrets secrets, Clock clock, InterlineProperties properties) {
         HttpIcsFetcher fetcher = new HttpIcsFetcher(properties.calendar().allowLoopbackHttp());
