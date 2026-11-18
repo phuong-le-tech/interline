@@ -56,7 +56,7 @@ class M3Round1MeetingsApiTest {
     }
 
     private static void assertNotSuccess(Resp response) {
-        assertThat(response.status()).as(response.body()).isNotBetween(200, 299);
+        assertThat(response.status()).as(response.body()).isGreaterThanOrEqualTo(300);
     }
 
     private static List<String> names(JsonNode list) {
