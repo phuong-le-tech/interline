@@ -32,16 +32,26 @@ final class IcsRecurrence {
 
     /** Parse-wide work limit: a step count and a wall-clock deadline shared by every series of one parse. */
     static final class Budget {
-        private final long deadlineNanos = System.nanoTime() + IcsParser.MAX_PARSE_MILLIS * 1_000_000L;
+        private final long maxSteps;
+        private final long deadlineNanos;
         private long steps;
         private String exhausted;
+
+        Budget() {
+            this(IcsParser.MAX_PERIOD_STEPS, IcsParser.MAX_PARSE_MILLIS);
+        }
+
+        Budget(long maxSteps, long maxMillis) {
+            this.maxSteps = maxSteps;
+            this.deadlineNanos = System.nanoTime() + maxMillis * 1_000_000L;
+        }
 
         /** Accounts one period; false (and stays false) once the step limit or the deadline is hit. */
         boolean spend() {
             if (exhausted != null) {
                 return false;
             }
-            if (++steps > IcsParser.MAX_PERIOD_STEPS) {
+            if (++steps > maxSteps) {
                 exhausted = "step";
             } else if ((steps & 255) == 0 && System.nanoTime() - deadlineNanos > 0) {
                 exhausted = "time";

@@ -44,19 +44,30 @@ public final class IcsParser {
     private final Set<String> warnings = new LinkedHashSet<>();
     /** Largest-first, so the latest event is evicted when more than MAX_EVENTS_PER_SYNC are kept. */
     private final PriorityQueue<CalendarEvent> kept = new PriorityQueue<>(ORDER.reversed());
-    private final IcsRecurrence.Budget budget = new IcsRecurrence.Budget();
+    private final IcsRecurrence.Budget budget;
     private boolean cut;
     private boolean incomplete;
     private int skipped;
 
     private IcsParser(ZoneId zone, long windowStart, long windowEnd) {
+        this(zone, windowStart, windowEnd, MAX_PERIOD_STEPS, MAX_PARSE_MILLIS);
+    }
+
+    private IcsParser(ZoneId zone, long windowStart, long windowEnd, long maxPeriodSteps, long maxParseMillis) {
+        this.budget = new IcsRecurrence.Budget(maxPeriodSteps, maxParseMillis);
         this.zone = zone;
         this.windowStart = windowStart;
         this.windowEnd = windowEnd;
     }
 
     public static CalendarSnapshot parse(byte[] body, ZoneId localZone, long windowStartMs, long windowEndMs) {
-        IcsParser parser = new IcsParser(localZone, windowStartMs, windowEndMs);
+        return parse(body, localZone, windowStartMs, windowEndMs, MAX_PERIOD_STEPS, MAX_PARSE_MILLIS);
+    }
+
+    /** Same with explicit limits, so the step budget and the deadline can be exercised deterministically. */
+    public static CalendarSnapshot parse(byte[] body, ZoneId localZone, long windowStartMs, long windowEndMs,
+                                         long maxPeriodSteps, long maxParseMillis) {
+        IcsParser parser = new IcsParser(localZone, windowStartMs, windowEndMs, maxPeriodSteps, maxParseMillis);
         try {
             parser.run(body);
         } catch (RuntimeException e) {
@@ -156,6 +167,7 @@ public final class IcsParser {
     private void finishLine(List<String> lines, StringBuilder line, boolean tooLong) {
         if (tooLong) {
             warnings.add("A line longer than 64 KB was skipped");
+            incomplete = true; // data was discarded: this snapshot must not be used to delete what is stored
         } else if (line.length() > 0) {
             lines.add(line.toString());
         }
