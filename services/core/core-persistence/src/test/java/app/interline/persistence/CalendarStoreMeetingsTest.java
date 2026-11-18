@@ -82,8 +82,8 @@ class CalendarStoreMeetingsTest {
     @Test
     void findEventFindsNonIcsSourcesToo() {
         database.write(j -> j.sql("INSERT INTO calendar_events(id,source,external_id,title,starts_at,ends_at,synced_at) "
-                + "VALUES ('e1','google','g1','G',1,2,1)").update());
-        assertThat(store.findEvent("e1")).map(EventRow::source).contains("google");
+                + "VALUES ('e1','manual','g1','G',1,2,1)").update());
+        assertThat(store.findEvent("e1")).map(EventRow::source).contains("manual");
     }
 
     @Test
@@ -167,9 +167,9 @@ class CalendarStoreMeetingsTest {
         assertThat(p.email()).isNull();
         assertThat(p.displayName()).isEqualTo("Carol");
         assertThat(p.createdAt()).isEqualTo(NOW);
-        String stored = database.read(j -> j.sql("SELECT email FROM people WHERE id = ?").param(p.id())
-                .query(String.class).optional().orElse("<missing>"));
-        assertThat(stored).isNull();
+        Long nullEmailRows = database.read(j -> j.sql("SELECT count(*) FROM people WHERE id = ? AND email IS NULL")
+                .param(p.id()).query(Long.class).single());
+        assertThat(nullEmailRows).isEqualTo(1L);
     }
 
     @Test

@@ -184,7 +184,7 @@ class MeetingStoreTest {
 
     @Test
     void subjectSeriesUidIsNullForANonIcsEvent() {
-        event("e1", "google", "g#1", 1000);
+        event("e1", "manual", "g#1", 1000);
         store.createDraft("m1", "t", "e1", NOW);
         assertThat(store.subject("m1").orElseThrow().seriesUid()).isNull();
     }
@@ -341,7 +341,7 @@ class MeetingStoreTest {
 
     @Test
     void candidateSeriesUidIsNullForNonIcsEvents() {
-        event("e1", "google", "g#1", 500);
+        event("e1", "manual", "g#1", 500);
         meeting("m1", "t", null, 1, "e1", null);
         assertThat(store.candidates("x", 10_000, 10).get(0).seriesUid()).isNull();
     }
