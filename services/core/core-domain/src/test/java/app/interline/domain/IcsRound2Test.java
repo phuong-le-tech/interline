@@ -322,7 +322,7 @@ class IcsRound2Test {
                 "DTEND;TZID=Europe/Paris:20260329T040000", "SUMMARY:Mix"));
         CalendarEvent e = single(s);
         assertThat(e.endsAt()).isEqualTo(ms(PARIS, 2026, 3, 29, 4, 0));
-        assertThat(e.endsAt() - e.startsAt()).isEqualTo(3 * HOUR);
+        assertThat(e.endsAt() - e.startsAt()).isEqualTo(2 * HOUR);
     }
 
     @Test
