@@ -85,7 +85,7 @@ final class IcsRecurrence {
         this.ordinalDays = days.stream().filter(d -> d.ordinal() != 0).toList();
         this.months = monthMask(parts.get("BYMONTH"));
         this.monthDays = monthDayMask(parts.get("BYMONTHDAY"));
-        if (!ordinalDays.isEmpty() && freq != Freq.MONTHLY || freq == Freq.YEARLY && !days.isEmpty() || ordinalDays.size() > MAX_ORDINAL_DAYS) {
+        if (!ordinalDays.isEmpty() && freq != Freq.MONTHLY || ordinalDays.size() > MAX_ORDINAL_DAYS) {
             throw new IllegalArgumentException("BYDAY");
         }
         if (freq == Freq.WEEKLY && monthDays != 0) {
@@ -123,16 +123,28 @@ final class IcsRecurrence {
     boolean forEach(IcsTime start, LocalDate from, LocalDate to, Budget budget, Predicate<LocalDateTime> visitor) {
         LocalDate first = start.local().toLocalDate();
         try {
+            boolean extra = !period(0, first).contains(first); // DTSTART is always an instance, even when the rule skips it
             long k = firstPeriod(first, from);
             long seen = count > 0 && k > 0 ? seenBefore(k, first) : 0;
-            if (seen < 0) {
+            if (seen < 0 || extra && count > 0) {
                 k = 0;
                 seen = 0;
+            }
+            if (k == 0 && extra) {
+                if (!visitStart(start, visitor)) {
+                    return true;
+                }
+                seen++;
             }
             return seen >= count && count > 0 || walk(start, first, to, budget, visitor, k, seen);
         } catch (DateTimeException | ArithmeticException e) {
             return true; // ran past the representable date range: the series is over
         }
+    }
+
+    /** Visits DTSTART itself; false when the walk must stop (past UNTIL, visitor done, or COUNT=1). */
+    private boolean visitStart(IcsTime start, Predicate<LocalDateTime> visitor) {
+        return start.epochMs() <= untilMs && visitor.test(start.local()) && count != 1;
     }
 
     private boolean walk(IcsTime start, LocalDate first, LocalDate to, Budget budget, Predicate<LocalDateTime> visitor, long k, long seen) {
@@ -248,12 +260,12 @@ final class IcsRecurrence {
         return dates;
     }
 
-    /** Without BYMONTH a YEARLY rule uses every month when BYMONTHDAY is given, otherwise only the start month. */
+    /** Without BYMONTH a YEARLY rule uses every month when BYMONTHDAY or BYDAY is given, otherwise only the start month. */
     private boolean yearMonthSelected(int month, LocalDate first) {
         if (months != 0) {
             return (months >> month & 1) != 0;
         }
-        return monthDays != 0 || month == first.getMonthValue();
+        return monthDays != 0 || !weekdays.isEmpty() || month == first.getMonthValue();
     }
 
     private List<LocalDate> monthDates(YearMonth month, int defaultDay) {
@@ -302,10 +314,19 @@ final class IcsRecurrence {
         throw new IllegalArgumentException(part);
     }
 
+    /** The distinct trimmed entries of a comma list, so a huge duplicate list costs one entry per distinct value. */
+    private static Set<String> distinct(String value) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String s : value.split(",", -1)) {
+            out.add(s.trim());
+        }
+        return out;
+    }
+
     private static int monthMask(String value) {
         int mask = 0;
         if (value != null) {
-            for (String s : value.split(",", -1)) {
+            for (String s : distinct(value)) {
                 mask |= 1 << number(s, "BYMONTH", 1, 12);
             }
         }
@@ -315,7 +336,7 @@ final class IcsRecurrence {
     private static long monthDayMask(String value) {
         long mask = 0;
         if (value != null) {
-            for (String s : value.split(",", -1)) {
+            for (String s : distinct(value)) {
                 int n = number(s, "BYMONTHDAY", -31, 31);
                 mask |= 1L << (n > 0 ? n : 32 - n);
             }
@@ -333,8 +354,8 @@ final class IcsRecurrence {
 
     private static Set<Day> days(String value) {
         Set<Day> out = new LinkedHashSet<>();
-        for (String s : value.split(",", -1)) {
-            Matcher m = DAY.matcher(s.trim());
+        for (String s : distinct(value)) {
+            Matcher m = DAY.matcher(s);
             if (!m.matches()) {
                 throw new IllegalArgumentException("BYDAY");
             }

@@ -8,6 +8,15 @@ import java.util.Map;
 /** One unfolded content line: NAME;PARAM=v:value. Names and parameter keys are upper-cased, quotes removed. */
 record IcsProp(String name, Map<String, String> params, String value) {
 
+    /** The text cut to at most {@code max} chars, never between the two halves of a surrogate pair. */
+    static String truncate(String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        boolean splitsPair = Character.isHighSurrogate(text.charAt(max - 1)) && Character.isLowSurrogate(text.charAt(max));
+        return text.substring(0, splitsPair ? max - 1 : max);
+    }
+
     /** Parses a logical line; null when it has no colon or no name. */
     static IcsProp parse(String line) {
         int colon = indexOutsideQuotes(line, ':', 0);

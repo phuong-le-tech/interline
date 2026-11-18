@@ -46,6 +46,7 @@ public final class IcsParser {
     private final PriorityQueue<CalendarEvent> kept = new PriorityQueue<>(ORDER.reversed());
     private final IcsRecurrence.Budget budget = new IcsRecurrence.Budget();
     private boolean cut;
+    private boolean incomplete;
     private int skipped;
 
     private IcsParser(ZoneId zone, long windowStart, long windowEnd) {
@@ -60,31 +61,43 @@ public final class IcsParser {
             parser.run(body);
         } catch (RuntimeException e) {
             parser.warnings.add("The calendar could not be fully read");
+            parser.incomplete = true;
         }
         return parser.snapshot();
     }
 
-    /** True when the body has a BEGIN:VCALENDAR line followed later by an END:VCALENDAR line (names case-insensitive). */
+    /**
+     * True when every calendar in the body is framed by BEGIN:VCALENDAR and END:VCALENDAR (names case-insensitive) through
+     * EOF: at least one calendar, no nested BEGIN, no stray END, no open calendar at the end, nothing but blank lines
+     * between or after calendars.
+     */
     public static boolean isCompleteCalendar(byte[] body) {
         String text = new String(body, StandardCharsets.UTF_8);
         if (text.startsWith("\uFEFF")) {
             text = text.substring(1);
         }
-        boolean begun = false;
+        boolean open = false;
+        boolean seen = false;
         for (String line : new IcsParser(ZoneOffset.UTC, 0, 0).unfold(text)) {
             String name = line.trim();
-            if (!begun) {
-                begun = name.equalsIgnoreCase("BEGIN:VCALENDAR");
-            } else if (name.equalsIgnoreCase("END:VCALENDAR")) {
-                return true;
+            if (name.isEmpty()) {
+                continue;
             }
+            boolean begin = name.equalsIgnoreCase("BEGIN:VCALENDAR");
+            boolean end = name.equalsIgnoreCase("END:VCALENDAR");
+            if (begin && open || end && !open || !open && !begin) {
+                return false;
+            }
+            open = begin || open && !end;
+            seen = true;
         }
-        return false;
+        return seen && !open;
     }
 
     private void run(byte[] body) {
         if (body.length > MAX_BODY_BYTES) {
             warnings.add("Calendar larger than 10 MB ignored");
+            incomplete = true;
             return;
         }
         List<IcsEvent> events = new ArrayList<>();
@@ -103,14 +116,16 @@ public final class IcsParser {
         Map<String, CalendarEvent> byId = new LinkedHashMap<>();
         kept.stream().sorted(ORDER).forEach(e -> byId.putIfAbsent(e.externalId(), e));
         if (budget.exhausted() != null) {
+            incomplete = true;
             warnings.add(budget.exhausted().equals("time")
                     ? "The calendar took too long to expand (over " + MAX_PARSE_MILLIS + " ms), some recurring events were cut"
                     : "The calendar is too complex to expand (over " + MAX_PERIOD_STEPS + " steps), some recurring events were cut");
         }
         if (cut) {
+            incomplete = true;
             warnings.add("More than " + MAX_EVENTS_PER_SYNC + " events in the window, the latest were dropped");
         }
-        return new CalendarSnapshot(new ArrayList<>(byId.values()), new ArrayList<>(warnings), skipped);
+        return new CalendarSnapshot(new ArrayList<>(byId.values()), new ArrayList<>(warnings), skipped, !incomplete);
     }
 
     // ---------------------------------------------------------------- lines and components
@@ -160,6 +175,7 @@ public final class IcsParser {
             if (p.name().equals("BEGIN") && vevent) {
                 if (events.size() >= MAX_VEVENTS) {
                     warnings.add("More than " + MAX_VEVENTS + " events, the rest were ignored");
+                    incomplete = true;
                     return events;
                 }
                 current = new ArrayList<>();
@@ -227,6 +243,7 @@ public final class IcsParser {
             if (emitted == MAX_OCCURRENCES_PER_SERIES) {
                 warnings.add("A series has more than " + MAX_OCCURRENCES_PER_SERIES + " occurrences in the window, the rest were dropped");
                 full = true;
+                incomplete = true;
                 return false;
             }
             emitted++;
@@ -262,6 +279,7 @@ public final class IcsParser {
         }
         if (!parsed.rule().forEach(e.start(), windowDate(e, windowStart, true), windowDate(e, windowEnd, false), budget, at -> visit(run, at))) {
             warnings.add("A series is too long to expand completely, the rest was dropped");
+            incomplete = true;
         }
         movedInstances(run, parsed.rule());
     }
@@ -284,6 +302,9 @@ public final class IcsParser {
 
     /** Overrides are selected by their own DTSTART, so one whose RECURRENCE-ID is outside the window can still show up. */
     private void movedInstances(SeriesRun run, IcsRecurrence rule) {
+        if (budget.exhausted() != null) {
+            return;
+        }
         for (Map.Entry<Long, IcsEvent> entry : run.overrides.entrySet()) {
             long original = entry.getKey();
             if (run.full || run.excluded.contains(original) || !rule.occursAt(run.master.start(), original, budget)) {

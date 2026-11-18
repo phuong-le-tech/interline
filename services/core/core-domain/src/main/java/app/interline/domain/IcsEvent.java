@@ -69,6 +69,9 @@ record IcsEvent(String uid, String title, String conferenceUrl, List<Attendee> a
             if (t == null) {
                 return null;
             }
+            if (!start.allDay() && !t.allDay()) {
+                return new Length(0, Duration.ZERO, Duration.ofMillis(Math.max(0, t.epochMs() - start.epochMs())));
+            }
             LocalDateTime end = t.local().atZone(t.zone()).withZoneSameInstant(start.zone()).toLocalDateTime();
             return new Length(0, end.isBefore(start.local()) ? Duration.ZERO : Duration.between(start.local(), end), Duration.ZERO);
         }
@@ -83,7 +86,7 @@ record IcsEvent(String uid, String title, String conferenceUrl, List<Attendee> a
         String title = text(props, "SUMMARY").trim();
         if (title.length() > IcsParser.MAX_TITLE_CHARS) {
             warnings.add("A title longer than " + IcsParser.MAX_TITLE_CHARS + " characters was cut");
-            title = title.substring(0, IcsParser.MAX_TITLE_CHARS);
+            title = IcsProp.truncate(title, IcsParser.MAX_TITLE_CHARS);
         }
         return title.isEmpty() ? NO_TITLE : title;
     }
@@ -133,7 +136,7 @@ record IcsEvent(String uid, String title, String conferenceUrl, List<Attendee> a
         String cn = p.param("CN") == null ? "" : IcsProp.unescape(p.param("CN")).trim();
         if (cn.length() > IcsParser.MAX_NAME_CHARS) {
             warnings.add("An attendee name longer than " + IcsParser.MAX_NAME_CHARS + " characters was cut");
-            cn = cn.substring(0, IcsParser.MAX_NAME_CHARS);
+            cn = IcsProp.truncate(cn, IcsParser.MAX_NAME_CHARS);
         }
         String name = cn.isEmpty() ? null : cn;
         return email == null && name == null ? null : new Attendee(name, email);
