@@ -495,6 +495,8 @@ CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='transcript_segments'
   tokenize='unicode61 remove_diacritics 2');
 -- + AFTER INSERT/UPDATE/DELETE triggers keeping both FTS indexes in sync; indexes as in draft 1.
 ```
+**V4 (M3) differences.** `V4__m3_calendar.sql` (Flyway location `db/migration-m3`) creates `calendar_events`, `people`, `meeting_participants` and adds `meetings.calendar_event_id`, plus an index on `calendar_events(starts_at)`. `people.email` is stored lower-cased. `calendar_events.attendees` is JSON text `[{"name":...,"email":...}]`; attendees without an email live only there. Sync keeps `source = 'ics'` rows only; the subscription URL is not in the database (ADR-007).
+
 FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` (`MigrationTest` asserts it at M0). Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
 
 ## 14. Packaging and distribution
@@ -671,6 +673,7 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | [Accepted](docs/adr/ADR-006-byok-llm-via-agent-secret-store.md) |
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
 | ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
+| ADR-007 | Calendar through an ICS subscription URL, parsed in the core | [Accepted](docs/adr/ADR-007-calendar-ics.md) |
 | ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, AEC, whisper packaging, test input, compression | [Draft](docs/adr/ADR-009-macos-capture.md) (spikes pending the M1 sitting) |
 | ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
 | ADR-011 | Core owns the data (SQLite via JDBC + Flyway, UI without SQL) | [Accepted](docs/adr/ADR-011-core-owns-the-data.md) |
