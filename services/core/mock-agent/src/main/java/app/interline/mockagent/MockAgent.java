@@ -11,6 +11,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Standalone Agent Protocol v1 agent that replays a fixture instead of capturing audio. It is spawned and
@@ -29,6 +31,7 @@ public final class MockAgent {
 
     private final MockOptions options;
     private final AgentConnection connection;
+    private final Map<String, String> secrets = new ConcurrentHashMap<>();
     private Script script;
     private byte[][] pcm;
     private CaptureRun run;
@@ -82,6 +85,7 @@ public final class MockAgent {
             case "session.stop" -> stopSession(message);
             case "permission.status", "permission.request" -> answerPermissions(message);
             case "transcribe.file" -> transcribeFile(message);
+            case "secret.get", "secret.put", "secret.delete" -> answerSecret(message);
             case "audio.ack" -> {
                 CaptureRun current = run;
                 if (current != null) {
@@ -185,6 +189,32 @@ public final class MockAgent {
         ObjectNode done = ControlMessage.nodes().objectNode().put("job_id", jobId)
                 .put("segments", regions.size()).put("duration_samples", durationSamples);
         connection.send(ControlMessage.response(request.id(), "transcribe.file.done", done));
+    }
+
+    /** In-memory secret store: the stand-in for the Keychain. Values are never written to stderr. */
+    private void answerSecret(ControlMessage request) throws IOException {
+        if (request.id() == null) return;
+        String account = request.body().path("account").asText("");
+        if (account.isEmpty()) {
+            connection.send(ControlMessage.response(request.id(), "error",
+                    error("invalid_request", "warn", "account is required", null)));
+            return;
+        }
+        ObjectNode reply = ControlMessage.nodes().objectNode();
+        switch (request.type()) {
+            case "secret.put" -> secrets.put(account, request.body().path("value").asText(""));
+            case "secret.delete" -> secrets.remove(account);
+            default -> {
+                String value = secrets.get(account);
+                if (value == null) {
+                    connection.send(ControlMessage.response(request.id(), "error",
+                            error("secret_not_found", "warn", "No secret for this account", null)));
+                    return;
+                }
+                reply.put("value", value);
+            }
+        }
+        connection.send(ControlMessage.response(request.id(), request.type(), reply));
     }
 
     private long[] stopPlayback() {

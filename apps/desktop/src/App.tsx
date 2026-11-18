@@ -12,6 +12,8 @@ import {
 import { Meters, type Levels } from './Meters';
 import { Models } from './Models';
 import { PermissionBanner } from './PermissionBanner';
+import { Notes } from './notes/Notes';
+import { Palette } from './notes/Palette';
 
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
@@ -19,12 +21,9 @@ const PERMISSION_MISSING = 'permission_missing';
 const MODEL_MISSING = 'model_missing';
 const SILENT_LEVELS: Levels = { mic: 0, system: 0 };
 
-type Banners = Partial<Record<PermissionKind, string>>;
-type View = 'live' | 'models';
+const MAX_RECONNECT_BACKOFF_MS = 8000;
 
-function text(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 export function App() {
   const [client, setClient] = useState<CoreClient>();
@@ -33,17 +32,24 @@ export function App() {
   const [transcript, setTranscript] = useState<LiveTranscript>(EMPTY_TRANSCRIPT);
   const [models, setModels] = useState<ModelView[]>([]);
   const [levels, setLevels] = useState<Levels>(SILENT_LEVELS);
-  const [banners, setBanners] = useState<Banners>({});
+  const [banners, setBanners] = useState<Partial<Record<PermissionKind, string>>>({});
   const [state, setState] = useState('idle');
   const [error, setError] = useState<string>();
-  const [view, setView] = useState<View>('live');
+  const [view, setView] = useState<'live' | 'models' | 'notes'>('live');
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string>();
+  const [highlightedSegmentId, setHighlightedSegmentId] = useState<number | undefined>();
+  const [coreAlive, setCoreAlive] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => setSlowStart(true), SLOW_START_MS);
     void waitForEndpoint(controller.signal).then((endpoint) => {
       clearTimeout(timer);
-      if (endpoint) setClient(new CoreClient(endpoint));
+      if (endpoint) {
+        setClient(new CoreClient(endpoint));
+        setCoreAlive(true);
+      }
     });
     return () => {
       clearTimeout(timer);
@@ -58,6 +64,7 @@ export function App() {
   useEffect(() => {
     if (!client) return;
     const controller = new AbortController();
+    let reconnectBackoff = 1000;
     const onEvent = (event: CoreEvent) => {
       const data = event.data;
       switch (event.name) {
@@ -95,11 +102,61 @@ export function App() {
           break;
       }
     };
-    void client.subscribe(onEvent, controller.signal);
+    const keepAlive = () => {
+      setCoreAlive(true);
+      reconnectBackoff = 1000;
+    };
+    const runSubscribe = async () => {
+      while (!controller.signal.aborted) {
+        try {
+          await client.subscribe((event) => {
+            keepAlive();
+            onEvent(event);
+          }, controller.signal);
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        setCoreAlive(false);
+        await new Promise((done) => setTimeout(done, reconnectBackoff));
+        reconnectBackoff = Math.min(reconnectBackoff * 2, MAX_RECONNECT_BACKOFF_MS);
+      }
+    };
+    void runSubscribe();
     void refreshMeetings(client).catch((e: unknown) => setError(String(e)));
     void client.models().then(setModels).catch((e: unknown) => setError(String(e)));
     return () => controller.abort();
   }, [client, refreshMeetings]);
+
+  useEffect(() => {
+    if (!client) return;
+    const controller = new AbortController();
+    const heartbeat = async () => {
+      try {
+        await client.meetings();
+        setCoreAlive(true);
+      } catch {
+        setCoreAlive(false);
+      }
+    };
+    heartbeat();
+    const id = setInterval(heartbeat, 2000);
+    return () => {
+      controller.abort();
+      clearInterval(id);
+    };
+  }, [client]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+      if (e.key === 'Escape') setPaletteOpen(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const status = useMemo(() => barState(state), [state]);
   const busy = ACTIVE_STATES.has(state);
@@ -116,7 +173,6 @@ export function App() {
     } catch (e) {
       setState('failed');
       setError(e instanceof Error ? e.message : String(e));
-      // The only way out of a missing model is the Models screen.
       if ((e as { code?: string }).code === MODEL_MISSING) setView('models');
     }
   };
@@ -140,6 +196,12 @@ export function App() {
     }
   };
 
+  const openMeetingNotes = (id: string, segmentId?: number) => {
+    setSelectedMeetingId(id);
+    setHighlightedSegmentId(segmentId);
+    setView('notes');
+  };
+
   return (
     <main>
       <h1>Interline</h1>
@@ -148,6 +210,7 @@ export function App() {
         <button type="button" onClick={record} disabled={!client || busy}>Record</button>
         <button type="button" onClick={stop} disabled={!client || state !== 'recording'}>Stop</button>
         <button type="button" onClick={() => setView(view === 'models' ? 'live' : 'models')}>Models</button>
+        <button type="button" onClick={() => setPaletteOpen(true)}>Search</button>
         <p role="status">{status}</p>
         <Meters levels={levels} />
       </div>
@@ -158,6 +221,8 @@ export function App() {
       {error && <p role="alert">{error}</p>}
       {view === 'models' ? (
         <Models models={models} onDownload={(id) => void download(id)} />
+      ) : view === 'notes' && selectedMeetingId ? (
+        <Notes client={client!} meetingId={selectedMeetingId} coreAlive={coreAlive} highlightedSegmentId={highlightedSegmentId} />
       ) : (
         <>
           <h2>Transcript</h2>
@@ -172,11 +237,26 @@ export function App() {
           <ul aria-label="Meetings">
             {meetings.map((meeting) => (
               <li key={meeting.id}>
-                {meeting.title || meeting.id.slice(0, 8)} - {meeting.status}
+                {meeting.title || meeting.id.slice(0, 8)} - {meeting.status}{' '}
+                <button type="button" className="link" onClick={() => openMeetingNotes(meeting.id)} aria-label="Open notes">
+                  notes
+                </button>
               </li>
             ))}
           </ul>
         </>
+      )}
+      {paletteOpen && client && (
+        <Palette
+          client={client}
+          onClose={() => setPaletteOpen(false)}
+          onOpenMeeting={(id: string, segmentId?: number) => {
+            setSelectedMeetingId(id);
+            setHighlightedSegmentId(segmentId);
+            setView('notes');
+            setPaletteOpen(false);
+          }}
+        />
       )}
     </main>
   );

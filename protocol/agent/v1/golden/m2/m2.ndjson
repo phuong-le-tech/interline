@@ -1,0 +1,7 @@
+{"v":1,"t":"secret.get","id":"c-10","ts":0,"body":{"account":"provider.openai-1"}}
+{"v":1,"t":"secret.get","re":"c-10","ts":0,"body":{"value":"sk-test-0000000000000000"}}
+{"v":1,"t":"secret.put","id":"c-11","ts":0,"body":{"account":"provider.openai-1","value":"sk-test-0000000000000000"}}
+{"v":1,"t":"secret.put","re":"c-11","ts":0,"body":{}}
+{"v":1,"t":"secret.delete","id":"c-12","ts":0,"body":{"account":"provider.openai-1"}}
+{"v":1,"t":"secret.delete","re":"c-12","ts":0,"body":{}}
+{"v":1,"t":"error","re":"c-13","ts":0,"body":{"code":"secret_not_found","severity":"warn","retryable":false,"message":"No secret for this account"}}

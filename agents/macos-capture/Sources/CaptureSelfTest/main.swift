@@ -615,6 +615,52 @@ test("AC7_regression_voice_processing_off_unchanged") {
                 "voice processing off still restarts the mic then rebuilds the tap; got \(source.events)")
 }
 
+test("AC19_keychain_roundTrip_putGetOverwriteDelete") {
+    let store = KeychainSecretStore()
+    let account = "selftest-\(UUID().uuidString)"
+    defer { try? store.delete(account: account) }
+    try store.put(account: account, value: "sk-test-keychain-0001")
+    try require(try store.get(account: account) == "sk-test-keychain-0001", "get must return the stored value")
+    try store.put(account: account, value: "sk-test-keychain-0002")
+    try require(try store.get(account: account) == "sk-test-keychain-0002", "a second put must overwrite the first")
+    try store.delete(account: account)
+    do {
+        _ = try store.get(account: account)
+        throw CheckFailure(description: "get after delete must throw notFound")
+    } catch SecretStoreError.notFound {
+        // expected
+    }
+}
+
+test("AC19_keychain_getOfUnknownAccountIsNotFound") {
+    let store = KeychainSecretStore()
+    do {
+        _ = try store.get(account: "selftest-never-stored-\(UUID().uuidString)")
+        throw CheckFailure(description: "get of an unknown account must throw notFound")
+    } catch SecretStoreError.notFound {
+        // expected
+    }
+}
+
+test("AC19_keychain_deleteOfUnknownAccountIsNotAnError") {
+    let store = KeychainSecretStore()
+    try store.delete(account: "selftest-never-stored-\(UUID().uuidString)")
+}
+
+test("AC19_keychain_itemsLiveUnderServiceAppInterline") {
+    try require(KeychainSecretStore.defaultService == "app.interline", "service must be app.interline")
+    let account = "selftest-\(UUID().uuidString)"
+    let other = KeychainSecretStore(service: "app.interline.selftest-other")
+    defer { try? KeychainSecretStore().delete(account: account); try? other.delete(account: account) }
+    try KeychainSecretStore().put(account: account, value: "sk-test-keychain-0003")
+    do {
+        _ = try other.get(account: account)
+        throw CheckFailure(description: "an item stored under app.interline must not be visible under another service")
+    } catch SecretStoreError.notFound {
+        // expected
+    }
+}
+
 var failures = 0
 for (name, body) in cases {
     do { try body(); print("PASS \(name)") }

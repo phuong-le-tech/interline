@@ -12,7 +12,8 @@
                "session.stop", "session.stopped", "audio.chunk", "audio.ack", "vad.segment", "stt.final",
                "error", "shutdown", "shutdown.ok",
                "level", "stt.partial", "device.changed", "permission.status", "permission.request",
-               "permission.denied", "transcribe.file", "transcribe.file.done"]
+               "permission.denied", "transcribe.file", "transcribe.file.done",
+               "secret.get", "secret.put", "secret.delete"]
     },
     "id": { "type": "string" },
     "re": { "type": "string" },
@@ -40,9 +41,31 @@
     { "if": { "properties": { "t": { "const": "permission.request" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionMessage" } } } },
     { "if": { "properties": { "t": { "const": "permission.denied" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionDenied" } } } },
     { "if": { "properties": { "t": { "const": "transcribe.file" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFile" } } } },
-    { "if": { "properties": { "t": { "const": "transcribe.file.done" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFileDone" } } } }
+    { "if": { "properties": { "t": { "const": "transcribe.file.done" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFileDone" } } } },
+    { "if": { "properties": { "t": { "const": "secret.get" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretGetRequest" } } } },
+    { "if": { "properties": { "t": { "const": "secret.put" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretPutRequest" } } } },
+    { "if": { "properties": { "t": { "const": "secret.delete" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretDeleteRequest" } } } }
   ],
   "$defs": {
+    "secretAccount": { "type": "string", "minLength": 1 },
+    "secretGetRequest": {
+      "description": "Request {account}. The reply (carries re, not id) is secret.get with {value}, or error secret_not_found.",
+      "type": "object",
+      "required": ["account"],
+      "properties": { "account": { "$ref": "#/$defs/secretAccount" } }
+    },
+    "secretPutRequest": {
+      "description": "Request {account, value}; the reply body is empty.",
+      "type": "object",
+      "required": ["account", "value"],
+      "properties": { "account": { "$ref": "#/$defs/secretAccount" }, "value": { "type": "string" } }
+    },
+    "secretDeleteRequest": {
+      "description": "Request {account}; the reply body is empty. Deleting an unknown account succeeds.",
+      "type": "object",
+      "required": ["account"],
+      "properties": { "account": { "$ref": "#/$defs/secretAccount" } }
+    },
     "permissionState": { "enum": ["granted", "denied", "not_determined", "restricted", "unknown"] },
     "level": {
       "type": "object",

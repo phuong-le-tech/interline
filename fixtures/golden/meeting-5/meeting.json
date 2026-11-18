@@ -1,0 +1,92 @@
+{
+ "title": "Reunion d'equipe retrospective",
+ "language": "fr",
+ "t0_wall_ms": 1795018000000,
+ "duration_ms": 90000,
+ "segments": [
+  {
+   "id": 5001,
+   "stream": "mic",
+   "speaker": "Me",
+   "start_ms": 0,
+   "end_ms": 5000,
+   "text": "On commence la retrospective du dernier sprint."
+  },
+  {
+   "id": 5002,
+   "stream": "system",
+   "speaker": "Them",
+   "start_ms": 7000,
+   "end_ms": 15000,
+   "text": "Les tests automatiques ont bien aide, on a eu beaucoup moins de regressions."
+  },
+  {
+   "id": 5003,
+   "stream": "mic",
+   "speaker": "Me",
+   "start_ms": 19000,
+   "end_ms": 25000,
+   "text": "Par contre le deploiement du jeudi a pris trois heures."
+  },
+  {
+   "id": 5004,
+   "stream": "system",
+   "speaker": "Them",
+   "start_ms": 29000,
+   "end_ms": 37000,
+   "text": "Il faut automatiser le deploiement, c'est notre plus gros irritant."
+  },
+  {
+   "id": 5005,
+   "stream": "mic",
+   "speaker": "Me",
+   "start_ms": 41000,
+   "end_ms": 47000,
+   "text": "Je propose que Julien prenne le sujet ce sprint."
+  },
+  {
+   "id": 5006,
+   "stream": "system",
+   "speaker": "Them",
+   "start_ms": 51000,
+   "end_ms": 57000,
+   "text": "Julien est d'accord, il commence lundi."
+  },
+  {
+   "id": 5007,
+   "stream": "mic",
+   "speaker": "Me",
+   "start_ms": 61000,
+   "end_ms": 67000,
+   "text": "Autre point: la documentation est en retard."
+  },
+  {
+   "id": 5008,
+   "stream": "system",
+   "speaker": "Them",
+   "start_ms": 71000,
+   "end_ms": 78000,
+   "text": "On reserve une demi-journee vendredi pour la mettre a jour."
+  }
+ ],
+ "notes": [
+  {
+   "id": "01900005-0001-7051-800c-00000007a121",
+   "kind": "bullet",
+   "anchor_ms": 9000,
+   "text": "Tests auto: moins de régressions"
+  },
+  {
+   "id": "01900005-0002-7052-8013-00000007a122",
+   "kind": "bullet",
+   "anchor_ms": 21000,
+   "text": "Déploiement jeudi: 3 h"
+  },
+  {
+   "id": "01900005-0003-7053-801a-00000007a123",
+   "kind": "bullet",
+   "anchor_ms": 63000,
+   "text": "Documentation en retard"
+  }
+ ]
+}

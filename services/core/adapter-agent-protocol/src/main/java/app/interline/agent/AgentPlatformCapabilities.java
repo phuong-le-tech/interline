@@ -46,6 +46,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(2);
     /** A freshly launched JVM needs time to say hello; the heartbeat deadline only applies after that. */
     private static final Duration STARTUP_GRACE = Duration.ofSeconds(5);
+    private static final Duration READY_WAIT = Duration.ofSeconds(15);
+    private static final Duration READY_POLL = Duration.ofMillis(50);
 
     private final Config config;
     private final Clock clock;
@@ -53,6 +55,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private final AtomicInteger requestCounter = new AtomicInteger();
     private final Map<String, String> pendingStarts = new ConcurrentHashMap<>();
     private final Map<String, String> pendingImports = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.CompletableFuture<ControlMessage>> pendingExchanges = new ConcurrentHashMap<>();
     private volatile Link link;
     private volatile boolean terminated;
     private volatile CountDownLatch shutdownAcknowledged = new CountDownLatch(0);
@@ -177,6 +180,11 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     }
 
     private void dispatch(ControlMessage message) {
+        var exchange = message.replyTo() == null ? null : pendingExchanges.remove(message.replyTo());
+        if (exchange != null) {
+            exchange.complete(message);
+            return;
+        }
         JsonNode body = message.body();
         switch (message.type()) {
             case "heartbeat" -> supervisor.heartbeatReceived();
@@ -318,6 +326,45 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         } catch (IOException e) {
             LOG.log(System.Logger.Level.DEBUG, "ack not delivered, the agent is going away");
             return false;
+        }
+    }
+
+    /** The OS secret store, reached through the connected agent. */
+    public app.interline.domain.SecretStore secrets() { return new AgentSecretStore(this::exchange); }
+
+    /** The agent may still be starting right after boot or restarting: wait briefly instead of failing at once. */
+    private Link awaitReadyLink() {
+        long deadline = System.nanoTime() + READY_WAIT.toNanos();
+        while (true) {
+            Link current = link;
+            if (current != null && current.ready) return current;
+            if (terminated || System.nanoTime() >= deadline) throw new IllegalStateException("The capture agent is not connected");
+            try {
+                Thread.sleep(READY_POLL.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for the capture agent", e);
+            }
+        }
+    }
+
+    private ControlMessage exchange(String type, ObjectNode body, Duration timeout) {
+        Link current = awaitReadyLink();
+        String id = nextRequestId();
+        var reply = new java.util.concurrent.CompletableFuture<ControlMessage>();
+        pendingExchanges.put(id, reply);
+        try {
+            current.connection.send(ControlMessage.request(id, type, body));
+            return reply.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (IOException e) {
+            throw new IllegalStateException("The capture agent did not accept the request", e);
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException e) {
+            throw new IllegalStateException("The capture agent did not answer " + type, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for " + type, e);
+        } finally {
+            pendingExchanges.remove(id);
         }
     }
 

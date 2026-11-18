@@ -1,0 +1,64 @@
+{
+ "blocks": [
+  {
+   "user_block_id": "01900002-0001-7021-8009-000000030d41",
+   "additions": [
+    {
+     "text": "Le client veut migrer ses donnees avant la fin du mois, priorite numero un.",
+     "sources": [
+      2002
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900002-0002-7022-8010-000000030d42",
+   "additions": [
+    {
+     "text": "Le premier lot de migration serait livre sous dix jours ouvres; dossier d'architecture envoye des demain.",
+     "sources": [
+      2004
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900002-0003-7023-8017-000000030d43",
+   "additions": [
+    {
+     "text": "Option de maintenance annuelle possible, integrable dans une offre globale.",
+     "sources": [
+      2006
+     ]
+    }
+   ]
+  }
+ ],
+ "other_points": [
+  {
+   "text": "Prochaine reunion mardi prochain pour valider le planning.",
+   "sources": [
+    2008
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "text": "Envoyer le dossier d'architecture",
+   "owner": "Me",
+   "due": null,
+   "sources": [
+    2005
+   ]
+  },
+  {
+   "text": "Valider le planning mardi prochain",
+   "owner": "Them",
+   "due": null,
+   "sources": [
+    2008
+   ]
+  }
+ ],
+ "title_suggestion": "Rendez-vous Delmas: migration et budget"
+}

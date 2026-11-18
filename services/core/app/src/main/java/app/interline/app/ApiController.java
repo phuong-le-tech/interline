@@ -43,7 +43,7 @@ class ApiController {
 
     record Meeting(String id, String title, String status, Long startedAt, Long endedAt) { }
 
-    record TranscriptLine(String stream, String seg, String speaker, long startMs, long endMs, String text) { }
+    record TranscriptLine(long id, String stream, String seg, String speaker, long startMs, long endMs, String text) { }
 
     @PostMapping("/recording/start")
     StartedRecording start(@RequestBody(required = false) StartRequest request) {
@@ -68,7 +68,7 @@ class ApiController {
     List<TranscriptLine> transcript(@PathVariable("id") String id) {
         CaptureStore store = ingest.store();
         if (store.findMeeting(id).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown meeting");
-        return store.transcript(id).stream().map(row -> new TranscriptLine(row.stream(), row.seg(), row.speaker(),
+        return store.transcript(id).stream().map(row -> new TranscriptLine(row.id(), row.stream(), row.seg(), row.speaker(),
                 row.startMs(), row.endMs(), row.text())).toList();
     }
 

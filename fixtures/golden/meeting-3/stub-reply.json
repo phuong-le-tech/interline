@@ -1,0 +1,64 @@
+{
+ "blocks": [
+  {
+   "user_block_id": "01900003-0001-7031-800a-0000000493e1",
+   "additions": [
+    {
+     "text": "Camille manque de visibilite sur les priorites; la feuille de route sera partagee des demain.",
+     "sources": [
+      3002
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900003-0002-7032-8011-0000000493e2",
+   "additions": [
+    {
+     "text": "Une formation au premier trimestre peut etre budgetee.",
+     "sources": [
+      3004
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900003-0003-7033-8018-0000000493e3",
+   "additions": [
+    {
+     "text": "Decision: limiter les reunions du lundi a trente minutes.",
+     "sources": [
+      3006
+     ]
+    }
+   ]
+  }
+ ],
+ "other_points": [
+  {
+   "text": "Camille se sent bien dans l'equipe apres un mois.",
+   "sources": [
+    3002
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "text": "Partager la feuille de route avec Camille",
+   "owner": "Me",
+   "due": null,
+   "sources": [
+    3003
+   ]
+  },
+  {
+   "text": "Budgeter une formation analyse de donnees",
+   "owner": "Me",
+   "due": "2026-12-15",
+   "sources": [
+    3005
+   ]
+  }
+ ],
+ "title_suggestion": "1:1 Camille: priorites et formation"
+}

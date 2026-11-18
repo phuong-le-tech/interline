@@ -22,7 +22,7 @@ final class ApiSecurityFilter extends OncePerRequestFilter {
     static final Set<String> BUILT_IN_ORIGINS = Set.of("tauri://localhost", "http://tauri.localhost");
     private static final String LOOPBACK_HOST = "127.0.0.1";
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String ALLOWED_METHODS = "GET, POST, OPTIONS";
+    private static final String ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
     private static final String ALLOWED_HEADERS = "authorization, content-type";
     private static final String PREFLIGHT_MAX_AGE_SECONDS = "600";
     private static final int MIN_TOKEN_LENGTH = 32;

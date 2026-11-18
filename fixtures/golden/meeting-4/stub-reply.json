@@ -1,0 +1,56 @@
+{
+ "blocks": [
+  {
+   "user_block_id": "01900004-0001-7041-800b-000000061a81",
+   "additions": [
+    {
+     "text": "Trois de ces cinq annees ont porte sur des systemes bancaires.",
+     "sources": [
+      4002
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900004-0002-7042-8012-000000061a82",
+   "additions": [
+    {
+     "text": "Migration realisee pendant un week-end, sans interruption de service.",
+     "sources": [
+      4004
+     ]
+    }
+   ]
+  },
+  {
+   "user_block_id": "01900004-0003-7043-8019-000000061a83",
+   "additions": [
+    {
+     "text": "Montant variable selon les avantages proposes par l'entreprise.",
+     "sources": [
+      4008
+     ]
+    }
+   ]
+  }
+ ],
+ "other_points": [
+  {
+   "text": "Style de travail: echanges courts et demonstrations regulieres avec le produit.",
+   "sources": [
+    4006
+   ]
+  }
+ ],
+ "action_items": [
+  {
+   "text": "Decider de la suite du processus de recrutement",
+   "owner": "Me",
+   "due": null,
+   "sources": [
+    4008
+   ]
+  }
+ ],
+ "title_suggestion": "Entretien developpeur Java"
+}
