@@ -3,6 +3,7 @@ package app.interline.app;
 import app.interline.agent.AgentPlatformCapabilities;
 import app.interline.ai.ConnectionTester;
 import app.interline.persistence.AiStore;
+import app.interline.persistence.CalendarStore;
 import app.interline.persistence.CaptureStore;
 import app.interline.persistence.NoteStore;
 import app.interline.persistence.ProviderStore;
@@ -16,6 +17,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Clock;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +42,15 @@ class CoreConfiguration {
     @Bean TemplateStore templateStore(DurableCaptureIngest ingest) { return new TemplateStore(ingest.database()); }
 
     @Bean SearchStore searchStore(DurableCaptureIngest ingest) { return new SearchStore(ingest.database()); }
+
+    @Bean CalendarStore calendarStore(DurableCaptureIngest ingest) { return new CalendarStore(ingest.database()); }
+
+    @Bean CalendarService calendarService(CalendarStore store, AgentSecrets secrets, Clock clock, InterlineProperties properties) {
+        HttpIcsFetcher fetcher = new HttpIcsFetcher(properties.calendar().allowLoopbackHttp());
+        ZoneId zone = properties.calendar().zone() == null || properties.calendar().zone().isBlank()
+                ? ZoneId.systemDefault() : ZoneId.of(properties.calendar().zone());
+        return new CalendarService(store, secrets, fetcher, new IcsCalendarSource(secrets, fetcher, zone), clock);
+    }
 
     @Bean ProviderService providerService(ProviderStore providers, AgentSecrets secrets, Clock clock) {
         return new ProviderService(providers, secrets, new ConnectionTester(), clock);
