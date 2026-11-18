@@ -1,0 +1,21 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Synthetic Google-like//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:google-like-1@example.com
+DTSTART:20261118T140000Z
+DTEND:20261118T150000Z
+SUMMARY:Quarterly planning\, roadmap\; pa
+ rt one of two
+DESCRIPTION:Line one\nLine two with a backslash \\ and comma\, done
+LOCATION:Room 4
+X-GOOGLE-CONFERENCE:https://meet.example.com/abc-defg-hij
+ORGANIZER;CN=Alice Organizer:mailto:Alice@Example.com
+ATTENDEE;CN=Alice Organizer;PARTSTAT=ACCEPTED:MAILTO:alice@example.com
+ATTENDEE;CN="Builder\, Bob";PARTSTAT=ACCEPTED;RSVP=TRUE:mailto:bob@example.com
+ATTENDEE;CN=Carol Guest;PARTSTAT=NEEDS-ACTION;X-NUM-GUESTS=0:mailto:Carol.Guest
+ @Example.com
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
