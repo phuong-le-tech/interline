@@ -433,4 +433,62 @@ class HttpIcsFetcherTest {
             assertThat(hits).as("redirect to %s", target).hasValue(1);
         }
     }
+
+    // ---- review round 2, item 9: more refused redirect hop targets -------------------------------------------------
+
+    private static void assertHopsRefused(List<String> hosts) {
+        for (String host : hosts) {
+            assertCheckRefused(HTTPS_FROM, "https://" + host + "/cal" + TAIL, false);
+            assertCheckRefused(HTTPS_FROM, "https://" + host + "/cal" + TAIL, true);
+            assertCheckRefused(LOOPBACK_FROM, "https://" + host + ":8443/cal" + TAIL, true);
+        }
+    }
+
+    @Test void AC9r2_carrierGradeNatRangeIsRefused() {
+        assertHopsRefused(List.of("100.64.0.1", "100.64.0.0", "100.100.100.100", "100.127.255.255"));
+    }
+
+    @Test void AC9r2_benchmarkingRangeIsRefused() {
+        assertHopsRefused(List.of("198.18.0.1", "198.18.0.0", "198.19.0.1", "198.19.255.255"));
+    }
+
+    @Test void AC9r2_ietfProtocolAssignmentRangeIsRefused() {
+        assertHopsRefused(List.of("192.0.0.8", "192.0.0.0", "192.0.0.255"));
+    }
+
+    @Test void AC9r2_multicastAddressesAreRefused() {
+        assertHopsRefused(List.of("224.0.0.1", "239.255.255.250", "230.1.2.3", "[ff02::1]", "[ff05::1:3]"));
+    }
+
+    @Test void AC9r2_nat64EmbeddingOfLoopbackOrMetadataIsRefused() {
+        assertHopsRefused(List.of("[64:ff9b::7f00:1]", "[64:ff9b::a9fe:a9fe]"));
+    }
+
+    @Test void AC9r2_ipv4CompatibleIpv6EmbeddingOfLoopbackOrMetadataIsRefused() {
+        assertHopsRefused(List.of("[::7f00:1]", "[::a9fe:a9fe]"));
+    }
+
+    @Test void AC9r2_numericAndHexLabelHostsAreRefused() {
+        assertHopsRefused(List.of("0x7f000001", "0177.0.0.1", "0x7f.0.0.1", "2130706433", "017700000001"));
+    }
+
+    @Test void AC9r2_theBoundariesJustOutsideTheNewRangesStayAllowed() {
+        for (String host : List.of("100.63.255.255", "100.128.0.1", "198.17.255.255", "198.20.0.1", "192.0.1.1",
+                "93.184.216.34", "example.com", "1.2.3.4.example.com")) {
+            assertCheckAllowed(HTTPS_FROM, "https://" + host + "/cal" + TAIL, false);
+            assertCheckAllowed(HTTPS_FROM, "https://" + host + "/cal" + TAIL, true);
+        }
+    }
+
+    @Test void AC9r2_refusalMessagesOfTheNewRangesNeverContainThePathTheQueryOrTheToken() {
+        for (String host : List.of("100.64.0.1", "198.18.0.1", "192.0.0.8", "224.0.0.1", "[ff02::1]", "[64:ff9b::7f00:1]",
+                "[::7f00:1]", "0x7f000001", "2130706433", "0177.0.0.1")) {
+            Throwable failure = org.assertj.core.api.Assertions.catchThrowable(
+                    () -> HttpIcsFetcher.checkRedirect(HTTPS_FROM, URI.create("https://" + host + TAIL), true));
+            assertThat(failure).as(host).isInstanceOf(IcsFetchException.class);
+            assertThat(failure.getMessage()).isNotBlank().doesNotContain(TOKEN).doesNotContain(QUERY).doesNotContain("/private")
+                    .doesNotContain(".ics").doesNotContain("key=").doesNotContain(host);
+            assertSafe(failure);
+        }
+    }
 }
