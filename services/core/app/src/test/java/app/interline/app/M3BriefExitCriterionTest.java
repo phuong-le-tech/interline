@@ -63,16 +63,16 @@ class M3BriefExitCriterionTest {
 
         JsonNode brief = briefOk(port, third);
 
-        assertThat(brief.path("meeting_id").asText()).isEqualTo(third);
+        assertThat(brief.path("meetingId").asText()).isEqualTo(third);
         JsonNode related = brief.path("related");
-        assertThat(texts(related, "meeting_id")).containsExactly(second, first);
-        related.forEach(r -> assertThat(r.path("matched_by").asText()).isEqualTo("series"));
-        assertThat(texts(brief.path("open_actions"), "text")).containsExactlyInAnyOrder("Send the report", "Book the room");
-        assertThat(texts(brief.path("open_actions"), "id")).containsExactlyInAnyOrder("act-1", "act-2");
-        JsonNode action = brief.path("open_actions").get(0);
-        assertThat(action.path("meeting_id").asText()).isIn(first, second);
-        assertThat(action.path("owner_label").asText()).isEqualTo("Olive");
-        assertThat(action.path("due_date").asText()).isEqualTo("2026-07-01");
+        assertThat(texts(related, "meetingId")).containsExactly(second, first);
+        related.forEach(r -> assertThat(r.path("matchedBy").asText()).isEqualTo("series"));
+        assertThat(texts(brief.path("openActions"), "text")).containsExactlyInAnyOrder("Send the report", "Book the room");
+        assertThat(texts(brief.path("openActions"), "id")).containsExactlyInAnyOrder("act-1", "act-2");
+        JsonNode action = brief.path("openActions").get(0);
+        assertThat(action.path("meetingId").asText()).isIn(first, second);
+        assertThat(action.path("ownerLabel").asText()).isEqualTo("Olive");
+        assertThat(action.path("dueDate").asText()).isEqualTo("2026-07-01");
     }
 
     @Test void AC5_aMeetingNeverRelatesToALaterOccurrence() {
@@ -94,7 +94,7 @@ class M3BriefExitCriterionTest {
 
         JsonNode brief = briefOk(port, third);
 
-        assertThat(texts(brief.path("open_actions"), "id")).containsExactly("act-open");
+        assertThat(texts(brief.path("openActions"), "id")).containsExactly("act-open");
         assertThat(brief.path("related")).hasSize(2);
     }
 
@@ -111,7 +111,7 @@ class M3BriefExitCriterionTest {
         JsonNode brief = briefOk(port, third);
 
         JsonNode firstRelated = null;
-        for (JsonNode r : brief.path("related")) if (first.equals(r.path("meeting_id").asText())) firstRelated = r;
+        for (JsonNode r : brief.path("related")) if (first.equals(r.path("meetingId").asText())) firstRelated = r;
         assertThat(firstRelated).isNotNull();
         List<String> notes = new java.util.ArrayList<>();
         firstRelated.path("notes").forEach(n -> notes.add(n.asText()));
@@ -128,7 +128,7 @@ class M3BriefExitCriterionTest {
 
         JsonNode related = briefOk(port, third).path("related");
         JsonNode firstRelated = null;
-        for (JsonNode r : related) if (first.equals(r.path("meeting_id").asText())) firstRelated = r;
+        for (JsonNode r : related) if (first.equals(r.path("meetingId").asText())) firstRelated = r;
         assertThat(firstRelated).isNotNull();
         List<String> notes = new java.util.ArrayList<>();
         firstRelated.path("notes").forEach(n -> notes.add(n.asText()));
@@ -142,10 +142,10 @@ class M3BriefExitCriterionTest {
         JsonNode related = briefOk(port, subject).path("related");
 
         assertThat(related).hasSize(10);
-        List<String> ids = texts(related, "meeting_id");
+        List<String> ids = texts(related, "meetingId");
         assertThat(ids.get(0)).isEqualTo("old-0");
         assertThat(ids.get(9)).isEqualTo("old-9");
-        related.forEach(r -> assertThat(r.path("matched_by").asText()).isEqualTo("title"));
+        related.forEach(r -> assertThat(r.path("matchedBy").asText()).isEqualTo("title"));
     }
 
     @Test void AC5_aSharedParticipantRelatesMeetingsAndOnlyTheSeriesLinksTheThirdOccurrence() {
@@ -159,14 +159,14 @@ class M3BriefExitCriterionTest {
 
         // third shares no participant here: only the series link applies
         JsonNode thirdBrief = briefOk(port, third);
-        assertThat(texts(thirdBrief.path("related"), "meeting_id")).containsExactly(first);
+        assertThat(texts(thirdBrief.path("related"), "meetingId")).containsExactly(first);
 
         // `other` has Alice, so the earlier Alice meeting is related by participant
         JsonNode otherBrief = briefOk(port, other);
-        assertThat(texts(otherBrief.path("related"), "meeting_id")).contains(earlier);
+        assertThat(texts(otherBrief.path("related"), "meetingId")).contains(earlier);
         for (JsonNode r : otherBrief.path("related")) {
-            if (earlier.equals(r.path("meeting_id").asText())) assertThat(r.path("matched_by").asText()).isEqualTo("participant");
+            if (earlier.equals(r.path("meetingId").asText())) assertThat(r.path("matchedBy").asText()).isEqualTo("participant");
         }
-        assertThat(texts(otherBrief.path("open_actions"), "id")).contains("act-p");
+        assertThat(texts(otherBrief.path("openActions"), "id")).contains("act-p");
     }
 }

@@ -251,13 +251,13 @@ class M3MeetingsApiTest {
         Resp response = brief(port, id);
         assertThat(response.status()).as(response.body()).isEqualTo(200);
         JsonNode brief = response.json();
-        assertThat(brief.path("meeting_id").asText()).isEqualTo(id);
+        assertThat(brief.path("meetingId").asText()).isEqualTo(id);
         assertThat(brief.path("participants").isArray()).isTrue();
         assertThat(names(brief.path("participants"))).containsExactly("Alice");
         assertThat(brief.path("related").isArray()).isTrue();
         assertThat(brief.path("related")).isEmpty();
-        assertThat(brief.path("open_actions").isArray()).isTrue();
-        assertThat(brief.path("open_actions")).isEmpty();
+        assertThat(brief.path("openActions").isArray()).isTrue();
+        assertThat(brief.path("openActions")).isEmpty();
     }
 
     @Test void AC7_unknownAndDeletedMeetingBriefIs404() {
