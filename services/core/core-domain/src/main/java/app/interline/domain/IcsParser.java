@@ -1,8 +1,11 @@
 package app.interline.domain;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -21,6 +24,16 @@ public final class IcsParser {
     public static final int MAX_VEVENTS = 20_000;
     public static final int MAX_OCCURRENCES_PER_SERIES = 500;
     public static final int MAX_EVENTS_PER_SYNC = 5_000;
+    public static final int MAX_PERIOD_STEPS = 2_000_000;
+    public static final long MAX_PARSE_MILLIS = 10_000;
+    public static final int MAX_ATTENDEES_PER_EVENT = 200;
+    public static final int MAX_TITLE_CHARS = 500;
+    public static final int MAX_NAME_CHARS = 200;
+    public static final int MAX_EMAIL_CHARS = 320;
+    public static final int MAX_URL_CHARS = 2048;
+
+    private static final long CLAMP_MS = 100_000_000_000_000_000L;
+    private static final long SLACK_MS = 2L * 24 * 3_600_000;
 
     private static final Comparator<CalendarEvent> ORDER =
             Comparator.comparingLong(CalendarEvent::startsAt).thenComparing(CalendarEvent::externalId);
@@ -31,6 +44,7 @@ public final class IcsParser {
     private final Set<String> warnings = new LinkedHashSet<>();
     /** Largest-first, so the latest event is evicted when more than MAX_EVENTS_PER_SYNC are kept. */
     private final PriorityQueue<CalendarEvent> kept = new PriorityQueue<>(ORDER.reversed());
+    private final IcsRecurrence.Budget budget = new IcsRecurrence.Budget();
     private boolean cut;
     private int skipped;
 
@@ -48,6 +62,24 @@ public final class IcsParser {
             parser.warnings.add("The calendar could not be fully read");
         }
         return parser.snapshot();
+    }
+
+    /** True when the body has a BEGIN:VCALENDAR line followed later by an END:VCALENDAR line (names case-insensitive). */
+    public static boolean isCompleteCalendar(byte[] body) {
+        String text = new String(body, StandardCharsets.UTF_8);
+        if (text.startsWith("\uFEFF")) {
+            text = text.substring(1);
+        }
+        boolean begun = false;
+        for (String line : new IcsParser(ZoneOffset.UTC, 0, 0).unfold(text)) {
+            String name = line.trim();
+            if (!begun) {
+                begun = name.equalsIgnoreCase("BEGIN:VCALENDAR");
+            } else if (name.equalsIgnoreCase("END:VCALENDAR")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void run(byte[] body) {
@@ -70,6 +102,11 @@ public final class IcsParser {
     private CalendarSnapshot snapshot() {
         Map<String, CalendarEvent> byId = new LinkedHashMap<>();
         kept.stream().sorted(ORDER).forEach(e -> byId.putIfAbsent(e.externalId(), e));
+        if (budget.exhausted() != null) {
+            warnings.add(budget.exhausted().equals("time")
+                    ? "The calendar took too long to expand (over " + MAX_PARSE_MILLIS + " ms), some recurring events were cut"
+                    : "The calendar is too complex to expand (over " + MAX_PERIOD_STEPS + " steps), some recurring events were cut");
+        }
         if (cut) {
             warnings.add("More than " + MAX_EVENTS_PER_SYNC + " events in the window, the latest were dropped");
         }
@@ -164,6 +201,47 @@ public final class IcsParser {
         }
     }
 
+    /** One series being expanded: counts what it emitted against the per-series cap. */
+    private final class SeriesRun {
+        final IcsEvent master;
+        final Map<Long, IcsEvent> overrides;
+        final Set<Long> excluded;
+        int emitted;
+        boolean full;
+
+        SeriesRun(IcsEvent master, Map<Long, IcsEvent> overrides, Set<Long> excluded) {
+            this.master = master;
+            this.overrides = overrides;
+            this.excluded = excluded;
+        }
+
+        String id(long originalMs) {
+            return master.uid() + "#" + originalMs;
+        }
+
+        /** Keeps the event (null is ignored); false once the per-series cap is reached. */
+        boolean emit(CalendarEvent ev) {
+            if (ev == null) {
+                return true;
+            }
+            if (emitted == MAX_OCCURRENCES_PER_SERIES) {
+                warnings.add("A series has more than " + MAX_OCCURRENCES_PER_SERIES + " occurrences in the window, the rest were dropped");
+                full = true;
+                return false;
+            }
+            emitted++;
+            keep(ev);
+            return true;
+        }
+
+        /** The occurrence of the series at this original start: its override when there is one, else the master. */
+        CalendarEvent instance(long originalMs, LocalDateTime at) {
+            IcsEvent override = overrides.get(originalMs);
+            return override == null ? occurrence(master, id(originalMs), at)
+                    : occurrence(override.inheritFrom(master), id(originalMs), override.start().local());
+        }
+    }
+
     private void series(IcsEvent e, Map<Long, IcsEvent> overrides) {
         if (e.cancelled()) {
             return;
@@ -174,46 +252,54 @@ public final class IcsParser {
             keep(occurrence(e, e.uid(), e.start().local()));
             return;
         }
-        Set<Long> excluded = exdates(e);
+        SeriesRun run = new SeriesRun(e, overrides, exdates(e));
         IcsRecurrence.Parsed parsed = rrule.isEmpty() ? null : IcsRecurrence.parse(rrule.get(0).value(), e.start());
         String unsupported = rdate ? "RDATE" : parsed.unsupported();
         if (unsupported != null) {
             warnings.add("Unsupported recurrence part " + unsupported + ": only the first occurrence is kept");
-            keepUnlessExcluded(e, overrides, excluded, e.start().local());
+            firstOccurrenceOnly(run);
             return;
         }
-        int[] emitted = {0};
-        parsed.rule().forEach(e.start(), at -> {
-            long ms = at.atZone(e.start().zone()).toInstant().toEpochMilli();
-            if (ms >= windowEnd) {
-                return false;
-            }
-            CalendarEvent ev = excluded.contains(ms) ? null : instance(e, overrides, ms, at);
-            if (ev == null) {
-                return true;
-            }
-            if (emitted[0] == MAX_OCCURRENCES_PER_SERIES) {
-                warnings.add("A series has more than " + MAX_OCCURRENCES_PER_SERIES + " occurrences in the window, the rest were dropped");
-                return false;
-            }
-            emitted[0]++;
-            keep(ev);
-            return true;
-        });
+        if (!parsed.rule().forEach(e.start(), windowDate(e, windowStart, true), windowDate(e, windowEnd, false), budget, at -> visit(run, at))) {
+            warnings.add("A series is too long to expand completely, the rest was dropped");
+        }
+        movedInstances(run, parsed.rule());
     }
 
-    private void keepUnlessExcluded(IcsEvent e, Map<Long, IcsEvent> overrides, Set<Long> excluded, LocalDateTime at) {
-        long ms = at.atZone(e.start().zone()).toInstant().toEpochMilli();
-        if (!excluded.contains(ms)) {
-            keep(instance(e, overrides, ms, at));
+    private void firstOccurrenceOnly(SeriesRun run) {
+        long ms = run.master.start().epochMs();
+        if (!run.excluded.contains(ms)) {
+            run.emit(run.instance(ms, run.master.start().local()));
         }
     }
 
-    /** One occurrence of a series, replaced by its RECURRENCE-ID override when there is one; null when dropped. */
-    private CalendarEvent instance(IcsEvent master, Map<Long, IcsEvent> overrides, long originalMs, LocalDateTime at) {
-        IcsEvent override = overrides.get(originalMs);
-        String id = master.uid() + "#" + originalMs;
-        return override == null ? occurrence(master, id, at) : occurrence(override, id, override.start().local());
+    /** Visits one generated occurrence; overridden ones are left to {@link #movedInstances}. */
+    private boolean visit(SeriesRun run, LocalDateTime at) {
+        long ms = at.atZone(run.master.start().zone()).toInstant().toEpochMilli();
+        if (ms >= windowEnd) {
+            return false;
+        }
+        return run.excluded.contains(ms) || run.overrides.containsKey(ms) || run.emit(occurrence(run.master, run.id(ms), at));
+    }
+
+    /** Overrides are selected by their own DTSTART, so one whose RECURRENCE-ID is outside the window can still show up. */
+    private void movedInstances(SeriesRun run, IcsRecurrence rule) {
+        for (Map.Entry<Long, IcsEvent> entry : run.overrides.entrySet()) {
+            long original = entry.getKey();
+            if (run.full || run.excluded.contains(original) || !rule.occursAt(run.master.start(), original, budget)) {
+                continue;
+            }
+            IcsEvent override = entry.getValue().inheritFrom(run.master);
+            run.emit(occurrence(override, run.id(original), override.start().local()));
+        }
+    }
+
+    /** The series-zone date to start walking from (window start minus the event length) or to stop at (window end), with slack. */
+    private LocalDate windowDate(IcsEvent e, long ms, boolean before) {
+        long length = Math.max(0, e.length().endMs(e.start().local(), e.start().zone()) - e.startMs());
+        long shifted = before ? ms - length - SLACK_MS : ms + SLACK_MS;
+        long clamped = Math.max(-CLAMP_MS, Math.min(CLAMP_MS, shifted));
+        return Instant.ofEpochMilli(clamped).atZone(e.start().zone()).toLocalDate();
     }
 
     /** The event at the given start, or null when cancelled or outside the window. */

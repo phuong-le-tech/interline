@@ -62,14 +62,17 @@ record IcsTime(LocalDateTime local, ZoneId zone, boolean allDay) {
         return parse(prop.value(), prop.params(), localZone, warnings);
     }
 
-    /** Parses an RFC 5545 DURATION (P1W, P1DT2H, PT1H30M ...); null when invalid. */
-    static Duration parseDuration(String value) {
+    /** Parses an RFC 5545 DURATION (P1W, P1DT2H, PT1H30M ...): D and W are nominal days, H, M and S elapsed time. Null when invalid. */
+    static IcsEvent.Length parseDuration(String value) {
         Matcher m = DURATION.matcher(value.trim().toUpperCase(java.util.Locale.ROOT));
         if (!m.matches()) {
             return null;
         }
-        long seconds = part(m, 2) * 604_800 + part(m, 3) * 86_400 + part(m, 4) * 3_600 + part(m, 5) * 60 + part(m, 6);
-        return Duration.ofSeconds("-".equals(m.group(1)) ? -seconds : seconds);
+        if ("-".equals(m.group(1))) {
+            return IcsEvent.Length.ZERO;
+        }
+        Duration elapsed = Duration.ofSeconds(part(m, 4) * 3_600 + part(m, 5) * 60 + part(m, 6));
+        return new IcsEvent.Length(part(m, 2) * 7 + part(m, 3), Duration.ZERO, elapsed);
     }
 
     private static long part(Matcher m, int group) {
