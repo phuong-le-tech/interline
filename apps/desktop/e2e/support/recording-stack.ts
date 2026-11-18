@@ -92,64 +92,10 @@ export async function stopProcess(managed: ManagedProcess) {
   signalGroup(managed, 'SIGKILL');
   await Promise.race([managed.exited, delay(1_000)]);
 }
+import { launchStack } from './stack';
 
 export async function startRecordingStack() {
-  const scratch = await mkdtemp(join(tmpdir(), 'interline-ac14-'));
-  const data = join(scratch, 'data');
-  const logs = join(scratch, 'logs');
-  await Promise.all([mkdir(data), mkdir(logs)]);
-  const children: ManagedProcess[] = [];
-  const stop = async () => {
-    try {
-      for (const child of [...children].reverse()) await stopProcess(child);
-    } finally {
-      await rm(scratch, { recursive: true, force: true });
-    }
-  };
-  try {
-    const core = launch(process.env.JAVA_HOME ? join(process.env.JAVA_HOME, 'bin/java') : 'java', [
-      '-jar', join(repository, 'services/core/app/target/interline-core.jar'),
-      `--data-dir=${data}`, `--log-dir=${logs}`,
-      `--agent=${join(repository, 'services/core/mock-agent/bin/mock-agent')}`,
-      '--agent-arg=--speed=20', '--parent=stdio', `--allow-origin=${origin}`,
-    ]);
-    children.push(core);
-    const pendingReady = readyPort(core);
-    core.child.stdin.write(`${JSON.stringify({ token })}\n`);
-    const port = await pendingReady;
-
-    // No globalSetup/webServer failure can mask the test's explicit READY assertion.
-    // Only Vite receives the dev endpoint env; no generated source or fake API.
-    const viteEnv = { ...process.env };
-    delete viteEnv.VITE_CORE_PORT;
-    delete viteEnv.VITE_CORE_TOKEN;
-    if (port !== undefined) {
-      viteEnv.VITE_CORE_PORT = String(port);
-      viteEnv.VITE_CORE_TOKEN = token;
-    }
-    const vite = launch(process.execPath, [join(desktop, 'node_modules/vite/bin/vite.js'), desktop,
-      '--host', '127.0.0.1', '--port', '5173', '--strictPort'], viteEnv);
-    children.push(vite);
-    let viteReady = false;
-    const deadline = Date.now() + 10_000;
-    while (!vite.finished() && Date.now() < deadline) {
-      if (vite.output().includes(origin)) {
-        try {
-          const response = await fetch(origin, { signal: AbortSignal.timeout(1_000) });
-          viteReady = response.ok;
-          if (viteReady) break;
-        } catch { /* Retry only our own Vite process. */ }
-      }
-      await delay(100);
-    }
-    return {
-      coreReady: port !== undefined,
-      viteReady,
-      diagnostics: () => `Core:\n${core.output()}\nVite:\n${vite.output()}`,
-      stop,
-    };
-  } catch (error) {
-    await stop();
-    throw error;
-  }
+  return launchStack({
+    agentArgs: ['--speed=20'],
+  });
 }

@@ -80,8 +80,10 @@ test('AC12_live - a real MockAgent crash shows Capture restarting and recovers',
     // --crash-at exits the real child with code 13. No routed or injected SSE.
     await expect.soft(page.getByRole('alert').filter({ hasText: 'Capture restarting' }))
       .toBeVisible({ timeout: 8_000 });
-    expect(stack.diagnostics(), 'The real agent must have exited before recovery')
-      .toContain('capture agent down (agent_exited)');
+    await expect.poll(() => stack.diagnostics(), {
+      message: 'The real agent must have exited before recovery',
+      timeout: 8_000,
+    }).toContain('capture agent down (agent_exited)');
     await expect(page.getByRole('status')).toHaveText('recording');
     const transcript = page.getByRole('list', { name: 'Transcript', exact: true });
     await expect(transcript.getByRole('listitem').filter({ hasText: /\bMe\b/ }).first()).toBeVisible();
