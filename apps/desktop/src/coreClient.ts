@@ -82,6 +82,22 @@ export type AiRun = {
   cost_estimate_usd?: number;
 };
 
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  starts_at: number;
+  ends_at: number;
+  conference_url?: string;
+  attendees: { name?: string; email?: string }[];
+};
+
+export type Brief = {
+  meetingId: string;
+  participants: { id: string; name: string; email: string | null }[];
+  related: { meetingId: string; title: string; date: number; matchedBy: string; notes: string[] }[];
+  openActions: { id: string; meetingId: string; text: string; ownerLabel: string | null; dueDate: string | null }[];
+};
+
 const ENDPOINT_POLL_MS = 200;
 const RECONNECT_MS = 1000;
 const REQUEST_TIMEOUT_MS = 30000;
@@ -122,7 +138,7 @@ export class CoreClient {
 
   private url(path: string): string {
     const allowed =
-        /^\/(recording\/(start|stop)|meetings|meetings\/[A-Za-z0-9%-._~]+\/(transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+        /^\/(recording\/(start|stop)|meetings|meetings\/[A-Za-z0-9%-._~]+\/(transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
     if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }
@@ -216,6 +232,40 @@ export class CoreClient {
 
   aiRuns(meetingId: string): Promise<AiRun[]> {
     return this.json(`/meetings/${encodeURIComponent(meetingId)}/ai-runs`);
+  }
+
+  createMeeting(title: string): Promise<{ id: string }> {
+    return this.json('/meetings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+  }
+
+  brief(meetingId: string): Promise<Brief> {
+    return this.json(`/meetings/${encodeURIComponent(meetingId)}/brief`);
+  }
+
+  icsSource(): Promise<{ configured: boolean; host?: string }> {
+    return this.json('/calendar/ics-source');
+  }
+
+  /** The address is a secret: it goes to the core once and is never read back, only its host. */
+  setIcsSource(url: string): Promise<void> {
+    return this.empty('/calendar/ics-source', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+  }
+
+  removeIcsSource(): Promise<void> {
+    return this.empty('/calendar/ics-source', { method: 'DELETE' });
+  }
+
+  /** The only call that makes the core fetch the calendar; nothing syncs by itself. */
+  syncCalendar(): Promise<{ upserted: number; removed: number; complete: boolean; warnings: string[] }> {
+    return this.json('/calendar/sync', { method: 'POST' });
+  }
+
+  calendarEvents(from: number, to: number): Promise<CalendarEvent[]> {
+    return this.json(`/calendar/events?from=${from}&to=${to}`);
+  }
+
+  meetingFromEvent(eventId: string): Promise<{ id: string }> {
+    return this.json(`/calendar/events/${encodeURIComponent(eventId)}/meeting`, { method: 'POST' });
   }
 
   exportMarkdown(meetingId: string, withTranscript: boolean): Promise<string> {
