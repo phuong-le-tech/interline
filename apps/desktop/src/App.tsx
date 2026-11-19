@@ -14,6 +14,7 @@ import { Models } from './Models';
 import { PermissionBanner } from './PermissionBanner';
 import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
+import { Today } from './Today';
 
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
@@ -233,6 +234,7 @@ export function App() {
               </li>
             ))}
           </ul>
+          {client && <Today client={client} onOpenMeeting={(id) => { void refreshMeetings(client); openMeetingNotes(id); }} />}
           <h2>Meetings</h2>
           <ul aria-label="Meetings">
             {meetings.map((meeting) => (

@@ -162,3 +162,12 @@ li.partial {
   cursor: pointer;
   font: inherit;
 }
+
+.brief {
+  margin: 0 0 1rem;
+}
+
+.today-events {
+  list-style: none;
+  padding: 0;
+}

@@ -3,6 +3,7 @@ import { CoreClient, type Block, type BlockPayload as ApiBlockPayload, type Prov
 import { openJournal, replay, submitEdit, type BlockPayload as JournalPayload, type Journal } from './journal';
 import { AiAddition } from './AiAddition';
 import { EnhancedToggle } from './EnhancedToggle';
+import { Brief } from './Brief';
 
 export type ViewMode = 'mine' | 'enhanced';
 
@@ -154,6 +155,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
 
   return (
     <section className="notes-view">
+      <Brief client={client} meetingId={meetingId} />
       <div className="notes-toolbar">
         <EnhancedToggle mode={mode} onChange={setMode} />
         <button type="button" onClick={enhance} disabled={!hasProvider || enhancing}>
