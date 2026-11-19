@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CoreClient, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
+import { invoke } from '@tauri-apps/api/core';
+import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
   EMPTY_TRANSCRIPT,
   MICROPHONE_SETTINGS_URI,
@@ -41,6 +42,7 @@ export function App() {
   const [highlightedSegmentId, setHighlightedSegmentId] = useState<number | undefined>();
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -98,6 +100,12 @@ export function App() {
             setError(`${text(data.code)}: ${text(data.message)}`);
           }
           break;
+        case 'calendar.upcoming': {
+          const title = text(data.title);
+          setUpcoming({ eventId: text(data.eventId), title });
+          if (inTauri()) void invoke('notify', { title, body: 'Starts in 1 minute' }).catch(() => undefined);
+          break;
+        }
         case 'model.download':
           setModels((current) => current.map((m) => (m.id === data.id ? (data as unknown as ModelView) : m)));
           break;
@@ -220,6 +228,15 @@ export function App() {
         <PermissionBanner key={kind} kind={kind} settingsUri={uri} />
       ))}
       {error && <p role="alert">{error}</p>}
+      {upcoming && client && (
+        <p role="status" aria-label="Upcoming meeting">
+          {upcoming.title} starts in 1 minute{' '}
+          <button type="button" onClick={() => {
+            void client.meetingFromEvent(upcoming.eventId).then(({ id }) => { setUpcoming(undefined); void refreshMeetings(client); openMeetingNotes(id); }).catch((e: unknown) => setError(String(e)));
+          }}>Take notes</button>{' '}
+          <button type="button" onClick={() => setUpcoming(undefined)}>Dismiss</button>
+        </p>
+      )}
       {view === 'models' ? (
         <Models models={models} onDownload={(id) => void download(id)} />
       ) : view === 'notes' && selectedMeetingId ? (

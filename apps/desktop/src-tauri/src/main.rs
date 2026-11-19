@@ -7,7 +7,8 @@ mod supervisor;
 use std::sync::Mutex;
 use std::process::Command;
 use supervisor::{Core, Endpoint};
-use tauri::{Manager, RunEvent, State};
+use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri_plugin_notification::{NotificationExt, PermissionState};
 
 /// The only URL scheme the UI may ask the shell to open: the macOS privacy panes.
 const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
@@ -24,6 +25,18 @@ fn open_system_settings(uri: String) -> Result<(), String> {
     Command::new("/usr/bin/open").arg("--").arg(&uri).status().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Shows a system notification. It only informs: nothing here starts a recording.
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    let notification = app.notification();
+    if notification.permission_state().map_err(|e| e.to_string())? != PermissionState::Granted
+        && notification.request_permission().map_err(|e| e.to_string())? != PermissionState::Granted
+    {
+        return Ok(()); // the user declined: the in-app banner still shows
+    }
+    notification.builder().title(title).body(body).show().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_core_endpoint(state: State<CoreState>) -> Result<Endpoint, String> {
     match &*state.0.lock().map_err(|_| "core state poisoned".to_string())? {
@@ -34,8 +47,9 @@ fn get_core_endpoint(state: State<CoreState>) -> Result<Endpoint, String> {
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(CoreState(Mutex::new(Err("core is starting".to_string()))))
-        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings])
+        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings, notify])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let log_dir = app.path().app_log_dir()?;

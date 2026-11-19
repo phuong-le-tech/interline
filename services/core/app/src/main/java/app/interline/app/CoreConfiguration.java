@@ -59,6 +59,11 @@ class CoreConfiguration {
         return new CalendarService(store, secrets, fetcher, new IcsCalendarSource(secrets, fetcher, zone), clock);
     }
 
+    @Bean(initMethod = "start", destroyMethod = "close")
+    UpcomingNotifier upcomingNotifier(CalendarStore store, Clock clock, EventBus events) {
+        return new UpcomingNotifier(store, clock, payload -> events.publish("calendar.upcoming", payload));
+    }
+
     @Bean ProviderService providerService(ProviderStore providers, AgentSecrets secrets, Clock clock) {
         return new ProviderService(providers, secrets, new ConnectionTester(), clock);
     }
