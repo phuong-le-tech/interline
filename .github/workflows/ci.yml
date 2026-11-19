@@ -25,7 +25,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: core-jar
-          path: services/core/app/target/interline-core.jar
+          # The e2e specs start the core jar with the MockAgent jar behind bin/mock-agent.
+          path: |
+            services/core/app/target/interline-core.jar
+            services/core/mock-agent/target/mock-agent-0.1.0-SNAPSHOT.jar
 
   ui:
     needs: core
@@ -48,7 +51,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: core-jar
-          path: services/core/app/target
+          path: services/core
       - name: Install dependencies
         working-directory: apps/desktop
         run: pnpm install --frozen-lockfile

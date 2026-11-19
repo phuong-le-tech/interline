@@ -336,12 +336,13 @@ class M1Test {
     @ParameterizedTest(name = "AC4_contract_transcribeFileEmitsCorrelatedFinalsWithoutLiveAudio_{0}")
     @ValueSource(ints = {0, 1, 2, 3, 4, 5})
     void AC4_contract_transcribeFileEmitsCorrelatedFinalsWithoutLiveAudio(int utterance) throws Exception {
+        // 60 s: the first import on a fresh macOS runner compiles the Metal shaders (about 13 s) before it transcribes.
         try (Peer p = connected()) {
             Path input = speechFixture(utterance, p.mock);
             ObjectNode body = obj().put("job_id", SESSION).put("path", input.toString()).put("stream", "system");
             body.set("stt", stt());
             p.send("c-import", "transcribe.file", null, body);
-            Packet first = p.match(e -> e.type().equals("stt.final") || e.type().equals("error"), 15000);
+            Packet first = p.match(e -> e.type().equals("stt.final") || e.type().equals("error"), 60000);
             assertThat(first.type()).as("file import must transcribe, not return unsupported_message").isEqualTo("stt.final");
             assertThat(first.body().path("session_id").asText()).isEqualTo(SESSION);
             assertThat(first.body().path("stream").asText()).isEqualTo("system");
