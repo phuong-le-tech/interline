@@ -22,6 +22,8 @@ public final class AgentCalendarSource implements CalendarSource {
         try {
             var query = ControlMessage.nodes().objectNode().put("from_ms", from).put("to_ms", to);
             ControlMessage reply = exchange.call("calendar.query", query, Duration.ofMinutes(2));
+            if (!"calendar.events".equals(reply.type()) || !reply.body().path("events").isArray()
+                    || !reply.body().path("complete").isBoolean()) throw invalid("events envelope");
             var permissions = ControlMessage.nodes().objectNode();
             permissions.putArray("permissions").add("calendar");
             ControlMessage status = exchange.call("permission.status", permissions, Duration.ofSeconds(5));
@@ -29,8 +31,6 @@ public final class AgentCalendarSource implements CalendarSource {
             String state = status.body().path("calendar").asText();
             if ("denied".equals(state) || "restricted".equals(state)) throw new CalendarDeniedException();
             if (!"granted".equals(state)) throw invalid("permission state");
-            if (!"calendar.events".equals(reply.type()) || !reply.body().path("events").isArray()
-                    || (reply.body().has("complete") && !reply.body().path("complete").isBoolean())) throw invalid("events envelope");
             JsonNode events = reply.body().path("events");
             if (events.size() > 5000) throw invalid("event count");
             List<CalendarEvent> result = new ArrayList<>();
@@ -55,7 +55,7 @@ public final class AgentCalendarSource implements CalendarSource {
                             start, end, event.path("conference_url").textValue(), attendees));
                 }
             }
-            return new CalendarSnapshot(result, List.of(), 0, reply.body().path("complete").asBoolean(true));
+            return new CalendarSnapshot(result, List.of(), 0, reply.body().path("complete").booleanValue());
         } catch (IllegalStateException e) {
             throw new CalendarUnavailableException("The capture agent could not read the calendar");
         }

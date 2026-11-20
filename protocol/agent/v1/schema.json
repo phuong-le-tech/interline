@@ -54,9 +54,9 @@
       "properties": { "from_ms": { "type": "integer" }, "to_ms": { "type": "integer" } }
     },
     "calendarEvents": {
-      "type": "object", "required": ["events"],
+      "type": "object", "required": ["events", "complete"],
       "properties": {
-        "complete": { "type": "boolean", "default": true },
+        "complete": { "type": "boolean" },
         "events": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/calendarEvent" } }
       }
     },

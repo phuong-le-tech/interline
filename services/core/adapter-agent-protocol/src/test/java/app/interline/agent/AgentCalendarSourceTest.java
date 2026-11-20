@@ -30,6 +30,15 @@ class AgentCalendarSourceTest {
                 .isInstanceOf(CalendarUnavailableException.class);
     }
 
+    @Test void missingCompletenessIsRejectedEvenIfCalendarAccessIsDenied() {
+        ObjectNode body = events();
+        body.remove("complete");
+        assertThatThrownBy(() -> source(body, "granted").fetch(0, 3000))
+                .isInstanceOf(CalendarUnavailableException.class);
+        assertThatThrownBy(() -> source(body, "denied").fetch(0, 3000))
+                .isInstanceOf(CalendarUnavailableException.class).isNotInstanceOf(CalendarDeniedException.class);
+    }
+
     @Test void unknownPermissionFailsAndDeniedHasItsOwnOutcome() {
         assertThatThrownBy(() -> source(events(), "invented").fetch(0, 3000))
                 .isInstanceOf(CalendarUnavailableException.class);
@@ -38,7 +47,7 @@ class AgentCalendarSourceTest {
     }
 
     private static ObjectNode events() {
-        var body = ControlMessage.nodes().objectNode();
+        var body = ControlMessage.nodes().objectNode().put("complete", true);
         body.putArray("events");
         return body;
     }

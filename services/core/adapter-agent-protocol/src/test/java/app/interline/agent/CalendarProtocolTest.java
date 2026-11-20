@@ -23,8 +23,8 @@ class CalendarProtocolTest {
         ((ObjectNode) hello.path("body").path("capabilities")).put("calendar", true);
         return Stream.of(hello,
             envelope("calendar.query", "{\"from_ms\":1000,\"to_ms\":2000}").put("id", "c-calendar"),
-            envelope("calendar.events", "{\"events\":[{\"external_id\":\"series/1000\",\"title\":\"Planning\",\"starts_at\":1000,\"ends_at\":2000,\"attendees\":[{\"name\":\"Alice\",\"email\":\"alice@example.com\"}],\"conference_url\":\"https://meet.example.com/a\",\"calendar_name\":\"Work\"}]}").put("re", "c-calendar"),
-            envelope("calendar.events", "{\"events\":[]}").put("re", "c-empty"),
+            envelope("calendar.events", "{\"events\":[{\"external_id\":\"series/1000\",\"title\":\"Planning\",\"starts_at\":1000,\"ends_at\":2000,\"attendees\":[{\"name\":\"Alice\",\"email\":\"alice@example.com\"}],\"conference_url\":\"https://meet.example.com/a\",\"calendar_name\":\"Work\"}],\"complete\":true}").put("re", "c-calendar"),
+            envelope("calendar.events", "{\"events\":[],\"complete\":true}").put("re", "c-empty"),
             envelope("calendar.changed", "{}"),
             envelope("permission.status", "{\"permissions\":[\"calendar\"]}").put("id", "c-status"),
             envelope("permission.status", "{\"calendar\":\"denied\"}").put("re", "c-status"),
@@ -85,6 +85,22 @@ class CalendarProtocolTest {
             attendee.put(field, 42);
             assertThat(schema.validate(bad)).as("attendee %s must be a string", field).isNotEmpty();
         }
+    }
+
+    @Test void calendarEventsMustExplicitlyDeclareCompleteness() throws Exception {
+        ObjectNode reply = envelope("calendar.events", "{\"events\":[]}").put("re", "c-empty");
+        assertThat(schema().validate(reply)).as("missing complete must not become a destructive snapshot").isNotEmpty();
+        ((ObjectNode) reply.path("body")).put("complete", "true");
+        assertThat(schema().validate(reply)).isNotEmpty();
+    }
+
+    @Test void calendarChangedRequiresAnObjectBody() throws Exception {
+        ObjectNode changed = envelope("calendar.changed", "{}");
+        assertThat(schema().validate(changed)).isEmpty();
+        changed.remove("body");
+        assertThat(schema().validate(changed)).isNotEmpty();
+        changed.put("body", false);
+        assertThat(schema().validate(changed)).isNotEmpty();
     }
 
     @Test void calendarPermissionStateIsValidated() throws Exception {
