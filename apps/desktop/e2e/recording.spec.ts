@@ -11,6 +11,7 @@ test('AC14_live - Me and Them appear before Stop and the meeting finishes done',
     const record = page.getByRole('button', { name: 'Record', exact: true });
     await expect(record).toBeVisible();
     await record.click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
 
     const transcript = page.getByRole('list', { name: 'Transcript', exact: true });
     await expect(transcript.getByRole('listitem').filter({ hasText: /\bMe\b/ }).first()).toBeVisible();
