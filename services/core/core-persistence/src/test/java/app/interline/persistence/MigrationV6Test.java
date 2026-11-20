@@ -10,7 +10,7 @@ import java.sql.DriverManager;
 import static app.interline.persistence.SqlSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MigrationV5Test {
+class MigrationV6Test {
     @TempDir Path directory;
 
     @Test void upgradesPopulatedV4PreservingNotesAndSupportsIdempotentCacheReplacementAndCascade() throws Exception {
