@@ -27,16 +27,17 @@ public final class CaptureStore {
 
     public record RecoveryJob(String id, String meetingId, StreamKind stream, String path, long offsetSamples) { }
 
-    /** Insert a meeting or open its draft, with speakers and the first run; existing capture runs stay untouched. */
+    /** Open a meeting for recording; existing capture runs and their speakers stay untouched. */
     public void createMeeting(String meetingId, long nowMs) {
         database.write(db -> {
             boolean exists = db.sql("SELECT count(*) FROM meetings WHERE id = ?").param(meetingId)
                     .query(Long.class).single() > 0;
             if (exists) {
-                int opened = db.sql("UPDATE meetings SET status = 'recording', started_at = ?, updated_at = ? "
-                        + "WHERE id = ? AND status = 'draft' AND deleted_at IS NULL")
+                int opened = db.sql("UPDATE meetings SET status = 'recording', started_at = COALESCE(started_at, ?), "
+                        + "ended_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
                         .params(nowMs, nowMs, meetingId).update();
-                if (opened == 0) return null;
+                if (opened == 0 || db.sql("SELECT count(*) FROM capture_runs WHERE meeting_id = ?")
+                        .param(meetingId).query(Long.class).single() > 0) return null;
             } else {
                 db.sql("INSERT INTO meetings(id, status, started_at, created_at, updated_at) VALUES (?, 'recording', ?, ?, ?)")
                         .params(meetingId, nowMs, nowMs, nowMs).update();
