@@ -15,6 +15,9 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -32,6 +35,13 @@ import org.springframework.boot.test.context.SpringBootTest;
             "interline.allowed-origins=tauri://localhost,http://tauri.localhost,http://localhost:1420"
         })
 class SecurityTest {
+    @TempDir static java.nio.file.Path data;
+
+    @DynamicPropertySource
+    static void database(DynamicPropertyRegistry properties) {
+        properties.add("interline.data-dir", () -> data.toString());
+    }
+
     // Public, deterministic 256-bit fixture. Never use this token outside tests.
     static final String TEST_TOKEN =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -42,6 +52,9 @@ class SecurityTest {
             new Route("POST", "/api/v1/recording/start"),
             new Route("POST", "/api/v1/recording/stop"),
             new Route("GET", "/api/v1/meetings"),
+            new Route("GET", "/api/v1/settings/consent"),
+            new Route("PUT", "/api/v1/settings/consent"),
+            new Route("POST", "/api/v1/meetings/00000000-0000-0000-0000-000000000001/consent-ack"),
             new Route("GET", "/api/v1/meetings/00000000-0000-0000-0000-000000000001/transcript"),
             new Route("GET", "/api/v1/events"));
     private static final List<String> ALLOWED_ORIGINS =

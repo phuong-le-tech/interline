@@ -96,4 +96,36 @@ class M3ConsentApiTest {
         assertThat(call(port, "POST", "/meetings/missing/consent-ack", null).status()).isEqualTo(404);
         assertThat(ok(call(port, "GET", "/meetings", null), "meetings").json()).isEmpty();
     }
+
+    @Test void recordingAnExistingMeetingAppendsWithoutResettingAudioOrAcknowledgement() throws Exception {
+        String id = create();
+        call(port, "POST", "/meetings/" + id + "/consent-ack", null);
+        JsonNode acknowledgement = meeting(id).path("consentAckAt");
+        Resp started = call(port, "POST", "/recording/start", Map.of("meetingId", id));
+        assertThat(started.json().path("meetingId").asText()).isEqualTo(id);
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+                context.getBean(app.interline.persistence.CaptureStore.class).lastSeq(id, app.interline.domain.StreamKind.MIC))
+                .isGreaterThan(5));
+        call(port, "POST", "/recording/stop", null);
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(meeting(id).path("status").asText()).isEqualTo("done"));
+        var store = context.getBean(app.interline.persistence.CaptureStore.class);
+        long durable = store.lastSeq(id, app.interline.domain.StreamKind.MIC);
+        var transcript = store.transcript(id);
+        assertThat(store.runCount(id)).isEqualTo(1);
+        Resp resumed = call(port, "POST", "/recording/start", Map.of("meetingId", id));
+        assertThat(resumed.status()).as(resumed.body()).isEqualTo(200);
+        assertThat(resumed.json().path("meetingId").asText()).isEqualTo(id);
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+                store.lastSeq(id, app.interline.domain.StreamKind.MIC)).isGreaterThan(durable));
+        assertThat(store.runCount(id)).isEqualTo(2);
+        assertThat(store.transcript(id)).containsAll(transcript);
+        assertThat(meeting(id).path("consentAckAt")).isEqualTo(acknowledgement);
+        assertThat(meeting(id).path("endedAt").isNull()).isTrue();
+        assertThat(call(port, "POST", "/recording/start", Map.of("meetingId", id)).status()).isEqualTo(409);
+    }
+
+    @Test void recordingAnUnknownMeetingCreatesNothing() {
+        assertThat(call(port, "POST", "/recording/start", Map.of("meetingId", "missing")).status()).isEqualTo(404);
+        assertThat(ok(call(port, "GET", "/meetings", null), "meetings").json()).isEmpty();
+    }
 }
