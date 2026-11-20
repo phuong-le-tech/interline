@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
   EMPTY_TRANSCRIPT,
+  CALENDAR_SETTINGS_URI,
   MICROPHONE_SETTINGS_URI,
   SYSTEM_AUDIO_SETTINGS_URI,
   applyLiveEvent,
@@ -86,9 +87,19 @@ export function App() {
         case 'transcript.suppressed':
           setTranscript((current) => applyLiveEvent(current, event.name, data));
           break;
+        case 'calendar.denied':
+          setBanners((current) => ({ ...current, calendar: CALENDAR_SETTINGS_URI }));
+          break;
+        case 'calendar.granted':
+          setBanners((current) => {
+            const next = { ...current };
+            delete next.calendar;
+            return next;
+          });
+          break;
         case 'permission.denied': {
-          const kind: PermissionKind = data.permission === 'microphone' ? 'microphone' : 'system_audio';
-          const fallback = kind === 'microphone' ? MICROPHONE_SETTINGS_URI : SYSTEM_AUDIO_SETTINGS_URI;
+          const kind: PermissionKind = data.permission === 'calendar' ? 'calendar' : data.permission === 'microphone' ? 'microphone' : 'system_audio';
+          const fallback = kind === 'calendar' ? CALENDAR_SETTINGS_URI : kind === 'microphone' ? MICROPHONE_SETTINGS_URI : SYSTEM_AUDIO_SETTINGS_URI;
           setBanners((current) => ({ ...current, [kind]: text(data.settings_uri) || fallback }));
           break;
         }
