@@ -178,6 +178,12 @@ public enum WireCodec {
     private static func validateBody(_ message: ControlMessage) throws {
         let body = message.body
         switch message.type {
+        case "calendar.query":
+            try require(message.id != nil, "calendar.query needs id")
+            guard let from = integer(body["from_ms"]), let to = integer(body["to_ms"]), to > from,
+                  Double(to) - Double(from) <= 31 * 86400000 else {
+                throw ProtocolValidationError(reason: "calendar.query needs an integer window of at most 31 days")
+            }
         case "audio.ack":
             try require(body["stream"] is String && StreamID.index(named: body["stream"] as! String) != nil, "audio.ack needs a stream")
             guard let seq = integer(body["seq"]), seq >= 0, seq <= Int(UInt32.max) else { throw ProtocolValidationError(reason: "audio.ack needs an unsigned seq") }

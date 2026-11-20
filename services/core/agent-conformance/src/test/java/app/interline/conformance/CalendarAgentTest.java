@@ -68,6 +68,60 @@ class CalendarAgentTest {
         }
     }
 
+    @Test @EnabledIfSystemProperty(named = "interline.swift-agent", matches = ".+")
+    void nativeTestInputAnswersCalendarQueryWithoutReadingRealEvents() throws Exception {
+        Path wav = work.resolve("silence.wav");
+        ByteBuffer bytes = ByteBuffer.allocate(46).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        bytes.put("RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(38)
+                .put("WAVEfmt ".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(16)
+                .putShort((short) 1).putShort((short) 1).putInt(16000).putInt(32000)
+                .putShort((short) 2).putShort((short) 16)
+                .put("data".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).putInt(2).putShort((short) 0);
+        Files.write(wav, bytes.array());
+        try (Peer p = nativeConnected("--test-input=" + wav)) {
+            JsonNode reply = p.call("calendar.query", obj().put("from_ms", 0).put("to_ms", 3000));
+            assertThat(reply.path("t").asText()).isEqualTo("calendar.events");
+            assertThat(reply.path("body").path("events").isArray()).isTrue();
+            assertThat(reply.path("body").path("events")).isEmpty();
+            assertThat(reply.path("body").path("complete").asBoolean()).isTrue();
+        }
+    }
+
+    @Test @Timeout(180)
+    @EnabledIfSystemProperty(named = "interline.calendar.native", matches = "true")
+    void manualRealEventKitReadWithPermissionPrompt() throws Exception {
+        try (Peer p = nativeConnected()) {
+            long now = System.currentTimeMillis();
+            String id = "c-real-calendar";
+            p.send(id, "calendar.query", null, obj().put("from_ms", now).put("to_ms", now + 86400000));
+            long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(2);
+            while (System.nanoTime() < deadline) {
+                JsonNode reply = p.next(125000);
+                if (!id.equals(reply.path("re").asText())) continue;
+                assertThat(reply.path("t").asText()).isEqualTo("calendar.events");
+                assertThat(reply.path("body").path("events").isArray()).isTrue();
+                return;
+            }
+            throw new AssertionError("No calendar reply after permission prompt");
+        }
+    }
+
+    private Peer nativeConnected(String... extra) throws Exception {
+        java.util.List<String> command = new java.util.ArrayList<>();
+        command.add(System.getProperty("interline.swift-agent"));
+        command.add("--protocol=1");
+        command.addAll(java.util.List.of(extra));
+        Peer p = new Peer(command);
+        try {
+            JsonNode hello = p.next(3000);
+            p.send(null, "hello.ack", hello.path("id").asText(), obj().put("protocol", 1).put("core_version", "conformance"));
+            return p;
+        } catch (Throwable e) {
+            p.close();
+            throw e;
+        }
+    }
+
     private static ObjectNode obj() { return JSON.createObjectNode(); }
 
     private Peer connected(String... extra) throws Exception {
