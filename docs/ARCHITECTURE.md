@@ -479,9 +479,10 @@ CREATE TABLE calendar_events (id TEXT PRIMARY KEY,
   source TEXT NOT NULL CHECK (source IN ('agent','ics','manual')),   -- d2: was 'eventkit'
   external_id TEXT, title TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
   conference_url TEXT, attendees TEXT, synced_at INTEGER, UNIQUE (source, external_id));
-CREATE TABLE briefs (id TEXT PRIMARY KEY, calendar_event_id TEXT REFERENCES calendar_events(id) ON DELETE CASCADE,
-  meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE, content_md TEXT NOT NULL,
-  source_meeting_ids TEXT NOT NULL, ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
+-- V5, ADR-012: derived cache, JSON lines with related meeting citations; only returned when input_hash matches.
+CREATE TABLE briefs (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL UNIQUE REFERENCES meetings(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, input_hash TEXT NOT NULL,
+  ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
 CREATE TABLE providers (id TEXT PRIMARY KEY,           -- NO key here
   kind TEXT NOT NULL CHECK (kind IN ('openai_compatible','anthropic','ollama')),
   name TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL,
