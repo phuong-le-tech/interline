@@ -163,6 +163,15 @@ class M3AiBriefTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"Alice\u00a0SurnamePrivate", "Alice\u3000SurnamePrivate"})
+    void participantFirstNamesRespectUnicodeSpaces(String name) {
+        configured();
+        ok(putParticipants(port, meeting, List.of(person(name, "alice@private.example"))), "participant");
+        generateOk();
+        assertThat(stub.chatCalls().get(0).prompt()).contains("Alice").doesNotContain("SurnamePrivate", "alice@private.example");
+    }
+
     @Test void providerErrorsNeverEchoCredentialsInResponseOrLogs() throws Exception {
         configured();
         stub.rejectWith(401, true);
