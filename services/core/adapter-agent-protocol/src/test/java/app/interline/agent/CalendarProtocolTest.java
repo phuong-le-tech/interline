@@ -114,6 +114,13 @@ class CalendarProtocolTest {
         }
     }
 
+    @Test void m3GoldenCorpusValidatesAndRoundTrips() throws Exception {
+        for (String line : Files.readAllLines(ROOT.resolve("protocol/agent/v1/golden/m3/m3.ndjson"))) {
+            ObjectNode message = (ObjectNode) JSON.readTree(line);
+            calendarMessagesValidateAndRoundTrip(message);
+        }
+    }
+
     private static ObjectNode envelope(String type, String body) throws Exception {
         ObjectNode node = JSON.createObjectNode().put("v", 1).put("t", type).put("ts", 0);
         node.set("body", JSON.readTree(body));

@@ -1,0 +1,4 @@
+{"v":1,"t":"calendar.query","id":"c-calendar","ts":0,"body":{"from_ms":1000,"to_ms":2000}}
+{"v":1,"t":"calendar.events","re":"c-calendar","ts":0,"body":{"events":[{"external_id":"series#1000","title":"Planning","starts_at":1000,"ends_at":2000,"attendees":[{"name":"Alice","email":"alice@example.com"}],"conference_url":null,"calendar_name":"Work"}],"complete":true}}
+{"v":1,"t":"calendar.changed","ts":0,"body":{}}
+{"v":1,"t":"permission.denied","ts":0,"body":{"permission":"calendar","detection":"tcc_denied","settings_uri":"x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"}}

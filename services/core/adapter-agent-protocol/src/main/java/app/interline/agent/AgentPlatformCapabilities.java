@@ -56,6 +56,8 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     private final Map<String, String> pendingStarts = new ConcurrentHashMap<>();
     private final Map<String, String> pendingImports = new ConcurrentHashMap<>();
     private final Map<String, java.util.concurrent.CompletableFuture<ControlMessage>> pendingExchanges = new ConcurrentHashMap<>();
+    private volatile boolean calendarSupported;
+    private volatile Runnable calendarChanged = () -> {};
     private volatile Link link;
     private volatile boolean terminated;
     private volatile CountDownLatch shutdownAcknowledged = new CountDownLatch(0);
@@ -140,7 +142,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
                 return;
             }
             supervisor.heartbeatReceived();
+            calendarSupported = connection.hello().body().path("capabilities").path("calendar").asBoolean(false);
             source.ready = true;
+            calendarChanged.run();
             listener.agentConnected(agentInfo(connection.hello()));
             while (true) {
                 Inbound inbound = connection.receive();
@@ -154,6 +158,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             reason = "handshake_failed";
         } finally {
             source.ready = false;
+            calendarSupported = false;
             flush(batch);
             if (!terminated) {
                 supervisor.outputClosed(source.process);
@@ -187,6 +192,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         }
         JsonNode body = message.body();
         switch (message.type()) {
+            case "calendar.changed" -> calendarChanged.run();
             case "heartbeat" -> supervisor.heartbeatReceived();
             case "session.started" -> {
                 pendingStarts.remove(message.replyTo());
@@ -204,8 +210,10 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             case "device.changed" -> StreamKind.fromWireName(body.path("stream").asText()).ifPresent(stream ->
                     listener.deviceChanged(body.path("session_id").asText(), stream,
                             body.path("device").asText(""), body.path("at_sample").asLong()));
-            case "permission.denied" -> listener.permissionDenied(body.path("session_id").asText(null),
+            case "permission.denied" -> {
+                if (!"calendar".equals(body.path("permission").asText())) listener.permissionDenied(body.path("session_id").asText(null),
                     body.path("permission").asText(), body.path("detection").asText(), body.path("settings_uri").asText());
+            }
             case "transcribe.file.done" -> {
                 String jobId = body.path("job_id").asText();
                 pendingImports.remove(jobId);
@@ -328,6 +336,13 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             return false;
         }
     }
+
+    public boolean calendarSupported() { return calendarSupported; }
+
+    public app.interline.domain.CalendarSource calendar() { return new AgentCalendarSource(this::exchange); }
+
+    /** The callback must queue work: the reader must remain free to deliver its reply. */
+    public void onCalendarChanged(Runnable callback) { calendarChanged = callback; }
 
     /** The OS secret store, reached through the connected agent. */
     public app.interline.domain.SecretStore secrets() { return new AgentSecretStore(this::exchange); }
