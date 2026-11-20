@@ -49,23 +49,30 @@ test('Cancel and Escape leave no acknowledgement or recording; opt out skips a n
     expect(stack.coreReady, stack.diagnostics()).toBe(true);
     expect(stack.viteReady, stack.diagnostics()).toBe(true);
     const writes: string[] = [];
+    const creations: string[] = [];
     page.on('request', (request) => {
       if (request.method() === 'POST' && /\/(consent-ack|recording\/start)$/.test(request.url())) writes.push(request.url());
+      if (request.method() === 'POST' && request.url().endsWith('/meetings')) creations.push(request.url());
     });
     await page.goto('/');
     const record = page.getByRole('button', { name: 'Record', exact: true });
     const dialog = page.getByRole('dialog', { name: /consent|record/i });
     await record.click();
     await expect(dialog).toBeVisible();
+    expect(creations).toHaveLength(0);
     await dialog.getByRole('checkbox', { name: /do not remind me again/i }).check();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toBeHidden();
     expect(writes).toHaveLength(0);
+    expect(creations).toHaveLength(0);
+    await page.reload();
+    await expect(page.getByRole('list', { name: 'Meetings', exact: true }).getByRole('listitem')).toHaveCount(0);
     await record.click();
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     expect(writes).toHaveLength(0);
+    expect(creations).toHaveLength(0);
     await record.click();
     await expect(dialog).toBeVisible();
     await dialog.getByRole('checkbox', { name: /do not remind me again/i }).check();
@@ -95,8 +102,10 @@ test('failed acknowledgement keeps reminder open and starts no recording', async
     expect(stack.coreReady, stack.diagnostics()).toBe(true);
     expect(stack.viteReady, stack.diagnostics()).toBe(true);
     let starts = 0;
+    let creations = 0;
     page.on('request', (request) => {
       if (request.method() === 'POST' && request.url().endsWith('/recording/start')) starts++;
+      if (request.method() === 'POST' && request.url().endsWith('/meetings')) creations++;
     });
     await page.route('**/meetings/*/consent-ack', (route) => route.fulfill({ status: 500,
       contentType: 'application/problem+json', body: JSON.stringify({ detail: 'Acknowledgement unavailable' }) }));
@@ -107,6 +116,12 @@ test('failed acknowledgement keeps reminder open and starts no recording', async
     await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Acknowledgement unavailable');
     await expect(dialog).toBeVisible();
+    expect(starts).toBe(0);
+    expect(creations).toBe(1);
+    const retried = page.waitForResponse((response) => response.url().endsWith('/consent-ack'));
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    expect((await retried).status()).toBe(500);
+    expect(creations).toBe(1);
     expect(starts).toBe(0);
   } finally {
     await stack.stop();

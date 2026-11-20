@@ -44,7 +44,7 @@ export function App() {
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
-  const [consentMeetingId, setConsentMeetingId] = useState<string>();
+  const [consentMeetingId, setConsentMeetingId] = useState<string | null>();
   const preparingRecording = useRef(false);
 
   useEffect(() => {
@@ -174,24 +174,20 @@ export function App() {
   const busy = ACTIVE_STATES.has(state);
 
   const record = async () => {
-    if (!client || preparingRecording.current || consentMeetingId || busy) return;
+    if (!client || preparingRecording.current || consentMeetingId !== undefined || busy) return;
     preparingRecording.current = true;
     setError(undefined);
     try {
       const settings = await client.consentSettings();
-      let id = selectedMeetingId;
-      if (!id) {
-        id = (await client.createMeeting('Untitled meeting')).id;
-        setSelectedMeetingId(id);
-      }
+      const id = selectedMeetingId;
       const currentMeetings = await client.meetings();
       setMeetings(currentMeetings);
       const meeting = currentMeetings.find((meeting) => meeting.id === id);
-      if (!meeting) throw new Error('Unknown meeting');
-      if (settings.reminder_enabled && meeting.consentAckAt == null) {
-        setConsentMeetingId(id);
+      if (id && !meeting) throw new Error('Unknown meeting');
+      if (settings.reminder_enabled && meeting?.consentAckAt == null) {
+        setConsentMeetingId(id ?? null);
       } else {
-        await startRecording(id);
+        await startRecording(id ?? (await client.createMeeting('Untitled meeting')).id);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -202,6 +198,7 @@ export function App() {
 
   const startRecording = async (meetingId: string) => {
     if (!client) return;
+    setSelectedMeetingId(meetingId);
     setBanners({});
     setTranscript(EMPTY_TRANSCRIPT);
     setState('starting');
@@ -306,14 +303,17 @@ export function App() {
           }}
         />
       )}
-      {consentMeetingId && client && (
+      {consentMeetingId !== undefined && client && (
         <Consent locale={document.documentElement.lang || navigator.language}
           onCancel={() => setConsentMeetingId(undefined)}
           onContinue={async (doNotRemind) => {
-            await client.acknowledgeConsent(consentMeetingId);
+            const id = consentMeetingId ?? (await client.createMeeting('Untitled meeting')).id;
+            setConsentMeetingId(id);
+            setSelectedMeetingId(id);
+            await client.acknowledgeConsent(id);
             if (doNotRemind) await client.setConsentReminder(false);
             setConsentMeetingId(undefined);
-            await startRecording(consentMeetingId);
+            await startRecording(id);
           }} />
       )}
     </main>
