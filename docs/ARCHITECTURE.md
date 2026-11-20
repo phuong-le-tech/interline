@@ -59,6 +59,8 @@ Who talks to whom (and nothing else):
 | Agent -> OS | native APIs | Audio, TCC, EventKit, Keychain |
 | UI -> Agent, Shell -> Agent | **none** | Forbidden: the agent has a single client, the core |
 
+macOS tray: `set_tray_state(idle / recording / warning)` uses DESIGN-SYSTEM `--fg` #15181A (idle template), `--signal` #A6402F (recording), `--ochre` #A87A2C (warning); closing the window hides it, Open Interline restores it, and Quit uses the shared shutdown path.
+
 Why the core (not the shell) spawns the agent: the core owns the session lifecycle and the recovery logic (section 5.8); stdio gives free, portable death detection (EOF). Fallback if macOS TCC attributes permissions badly to a grandchild process: the same protocol over a Unix domain socket with the shell as parent (section 5.2).
 
 ## 3. Responsibilities

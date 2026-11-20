@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement } from 'react';
+import { createElement, StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -100,6 +100,12 @@ async function emit(name: string, data: CoreEvent['data']) {
 describe('App tray state integration', () => {
   it('initializes the native tray to idle exactly once', async () => {
     await mountApp();
+    expect(trayCalls()).toEqual([['set_tray_state', { state: 'idle' }]]);
+  });
+
+  it('does not repeat its initial invocation during StrictMode effect replay', async () => {
+    render(createElement(StrictMode, null, createElement(App)));
+    await waitFor(() => expect(core.listener).toBeTypeOf('function'));
     expect(trayCalls()).toEqual([['set_tray_state', { state: 'idle' }]]);
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
@@ -16,6 +16,7 @@ import { PermissionBanner } from './PermissionBanner';
 import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
 import { Today } from './Today';
+import { trayState } from './trayState';
 
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
@@ -169,6 +170,14 @@ export function App() {
 
   const status = useMemo(() => barState(state), [state]);
   const busy = ACTIVE_STATES.has(state);
+  const tray = trayState(state, banners);
+  const lastTray = useRef<typeof tray>(undefined);
+
+  useEffect(() => {
+    if (!inTauri() || lastTray.current === tray) return;
+    lastTray.current = tray;
+    void invoke('set_tray_state', { state: tray }).catch((e: unknown) => setError(`Tray indicator unavailable: ${String(e)}`));
+  }, [tray]);
 
   const record = async () => {
     if (!client) return;
