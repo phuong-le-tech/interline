@@ -8,6 +8,16 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class AgentCalendarSourceTest {
+    @Test void validEventsPreserveTheirFields() {
+        var body = events();
+        var event = body.withArray("events").addObject().put("external_id", "a").put("title", "Planning")
+                .put("calendar_name", "Work").put("starts_at", 1795200000000L).put("ends_at", 1795203600000L)
+                .put("conference_url", "https://meet.example.com/a");
+        event.putArray("attendees").addObject().put("name", "Alice").put("email", "alice@example.com");
+        assertThat(source(body, "granted").fetch(1795190000000L, 1795300000000L).events())
+                .singleElement().satisfies(value -> assertThat(value.title()).isEqualTo("Planning"));
+    }
+
     @Test void partialSnapshotsNeverBecomeComplete() {
         var source = source(events().put("complete", false), "granted");
         assertThat(source.fetch(0, 3000).complete()).isFalse();

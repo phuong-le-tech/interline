@@ -85,13 +85,19 @@ class AgentCalendarAcceptanceTest {
     }
 
     @Test void configuredIcsTakesPrecedenceOverAdvertisedAgentCalendar() throws Exception {
-        start(calendarScript(List.of(event("a", "Agent planning")), true), false);
+        ObjectNode script = calendarScript(List.of(event("a", "Agent planning")), true);
+        ObjectNode change = script.withObject("calendar").putArray("changes").addObject().put("after_ms", 3000);
+        change.putArray("events").add(event("a", "Agent changed"));
+        start(script, false);
         awaitEvents("Agent planning");
         try (IcsStub ics = new IcsStub()) {
             ics.serve(calendar(vevent("ics-a", "ICS planning", NOW + HOUR, NOW + 2 * HOUR)));
             assertThat(putSource(port, ics.url()).status()).isEqualTo(204);
             ok(sync(port), "ICS sync");
-            assertThat(ics.hits.get()).isPositive();
+            assertThat(ics.hits.get()).isEqualTo(1);
+            // An agent notification must not make a configured ICS source fetch automatically.
+            await().during(Duration.ofSeconds(4)).atMost(Duration.ofSeconds(6)).untilAsserted(() ->
+                assertThat(ics.hits.get()).isEqualTo(1));
             assertThat(events(port).json()).anySatisfy(e -> {
                 assertThat(e.path("title").asText()).isEqualTo("ICS planning");
                 assertThat(e.path("source").asText()).isEqualTo("ics");
@@ -101,8 +107,8 @@ class AgentCalendarAcceptanceTest {
 
     private void start(ObjectNode script, boolean deny) throws Exception {
         writeScript(script);
-        context = M3Support.boot(data, "--interline.agent-args[2]=--script=" + data.resolve("calendar.json"),
-            "--interline.agent-args[3]=" + (deny ? "--deny=calendar" : "--speed=20"));
+        context = M3Support.boot(data, "--interline.agent-args[3]=--script=" + data.resolve("calendar.json"),
+            "--interline.agent-args[4]=" + (deny ? "--deny=calendar" : "--speed=20"));
         port = port(context);
     }
 

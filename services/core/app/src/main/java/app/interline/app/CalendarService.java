@@ -1,6 +1,8 @@
 package app.interline.app;
 
 import app.interline.app.HttpIcsFetcher.IcsFetchException;
+import app.interline.agent.AgentPlatformCapabilities;
+import app.interline.domain.CalendarDeniedException;
 import app.interline.domain.CalendarSnapshot;
 import app.interline.domain.CalendarSource;
 import app.interline.domain.CalendarUnavailableException;
@@ -17,10 +19,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The ICS calendar use cases. The subscription URL is a secret: it lives only in the {@link SecretStore} and is never
+ * Calendar source selection and sync. The subscription URL is a secret: it lives only in the {@link SecretStore} and is never
  * written to the database, a log line, an error or a response; the host is the most that is ever reported.
  */
-final class CalendarService {
+final class CalendarService implements AutoCloseable {
     static final Duration WINDOW_BEHIND = Duration.ofDays(1);
     static final Duration WINDOW_AHEAD = Duration.ofDays(14);
     static final Duration MAX_QUERY_SPAN = Duration.ofDays(31);
@@ -39,6 +41,11 @@ final class CalendarService {
     private final Object stateLock = new Object();
     private long generation;
     private final Clock clock;
+    private AgentPlatformCapabilities agent;
+    private EventBus events;
+    private final java.util.concurrent.ScheduledExecutorService refresh = java.util.concurrent.Executors
+            .newSingleThreadScheduledExecutor(task -> Thread.ofPlatform().name("calendar-refresh").daemon().unstarted(task));
+    private final java.util.concurrent.atomic.AtomicBoolean refreshQueued = new java.util.concurrent.atomic.AtomicBoolean();
 
     CalendarService(CalendarStore store, SecretStore secrets, HttpIcsFetcher fetcher, CalendarSource source, Clock clock) {
         this.store = store;
@@ -46,6 +53,39 @@ final class CalendarService {
         this.fetcher = fetcher;
         this.source = source;
         this.clock = clock;
+    }
+
+    void bind(AgentPlatformCapabilities agent, EventBus events) {
+        synchronized (stateLock) {
+            this.agent = agent;
+            this.events = events;
+            generation++;
+        }
+        agent.onCalendarChanged(this::refreshAgent);
+        refresh.scheduleWithFixedDelay(this::refreshAgent, 5, 5, java.util.concurrent.TimeUnit.MINUTES);
+    }
+
+    private void refreshAgent() {
+        // Called by the protocol reader: never acquire a lock that can be held across an agent exchange.
+        if (refresh.isShutdown() || !refreshQueued.compareAndSet(false, true)) return;
+        try {
+            refresh.execute(() -> {
+                // Clear before fetching so a change during the fetch queues another snapshot.
+                refreshQueued.set(false);
+                try {
+                    sync(true);
+                } catch (RuntimeException e) {
+                    LOG.log(System.Logger.Level.DEBUG, "agent calendar refresh failed");
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            refreshQueued.set(false);
+        }
+    }
+
+    @Override public void close() {
+        synchronized (stateLock) { generation++; }
+        refresh.shutdownNow();
     }
 
     void setSource(String url) {
@@ -62,6 +102,8 @@ final class CalendarService {
                 throw secretStoreUnavailable(e);
             }
             generation++;
+            store.deleteAgentEvents();
+            if (events != null) events.calendarDenied(false);
         }
         LOG.log(System.Logger.Level.INFO, "calendar source configured for host {0}", uri.getHost());
     }
@@ -89,23 +131,41 @@ final class CalendarService {
             generation++;
             store.deleteIcsEvents();
         }
+        if (agent != null) refreshAgent();
     }
 
     /**
      * Fetches without holding the state lock, then writes only if the source was not replaced or removed meanwhile:
      * a stale snapshot must never bring back events of a source the user just dropped.
      */
-    SyncResult sync() {
+    SyncResult sync() { return sync(false); }
+
+    private SyncResult sync(boolean agentOnly) {
         synchronized (syncLock) {
-            if (!configured()) throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_not_configured", "No calendar address is configured");
             long startedWith;
-            synchronized (stateLock) { startedWith = generation; }
+            boolean useAgent;
+            CalendarSource selected;
+            synchronized (stateLock) {
+                startedWith = generation;
+                if (agentOnly && (agent == null || !agent.calendarSupported())) {
+                    return new SyncResult(0, 0, 0, List.of(), true);
+                }
+                boolean icsConfigured = configured();
+                useAgent = !icsConfigured && agent != null && agent.calendarSupported();
+                if (agentOnly && !useAgent) return new SyncResult(0, 0, 0, List.of(), true);
+                if (!icsConfigured && !useAgent) throw ApiProblems.of(HttpStatus.CONFLICT, "calendar_not_configured", "No calendar address is configured");
+                selected = useAgent ? agent.calendar() : source;
+            }
             long now = clock.millis();
             long from = now - WINDOW_BEHIND.toMillis();
             long to = now + WINDOW_AHEAD.toMillis();
             CalendarSnapshot snapshot;
+            boolean denied = false;
             try {
-                snapshot = source.fetch(from, to);
+                snapshot = selected.fetch(from, to);
+            } catch (CalendarDeniedException e) {
+                denied = true;
+                snapshot = new CalendarSnapshot(List.of(), List.of(), 0);
             } catch (CalendarUnavailableException e) {
                 LOG.log(System.Logger.Level.WARNING, "calendar sync failed: {0}", e.getMessage());
                 throw ApiProblems.of(HttpStatus.BAD_GATEWAY, "calendar_fetch_failed", e.getMessage());
@@ -117,7 +177,11 @@ final class CalendarService {
                             "The calendar address changed during the sync; run it again");
                 }
                 // A partial snapshot only adds and updates: what it does not mention may simply not have been read.
-                counts = store.replaceIcsWindow(snapshot.events(), from, to, now, snapshot.complete());
+                if (useAgent) {
+                    counts = store.replaceAgentWindow(snapshot.events(), from, to, now, snapshot.complete());
+                    if (denied) store.deleteAgentEvents();
+                    if (events != null) events.calendarDenied(denied);
+                } else counts = store.replaceIcsWindow(snapshot.events(), from, to, now, snapshot.complete());
             }
             List<String> warnings = snapshot.warnings().size() <= MAX_WARNINGS ? snapshot.warnings()
                     : snapshot.warnings().subList(0, MAX_WARNINGS);
