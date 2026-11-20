@@ -18,7 +18,7 @@ public final class CaptureStore {
 
     public CaptureStore(SqliteDatabase database) { this.database = database; }
 
-    public record MeetingRow(String id, String title, String status, Long startedAt, Long endedAt) { }
+    public record MeetingRow(String id, String title, String status, Long startedAt, Long endedAt, Long consentAckAt) { }
 
     public record TranscriptRow(long id, String stream, String seg, String speaker, long startMs, long endMs, String text) { }
 
@@ -27,14 +27,20 @@ public final class CaptureStore {
 
     public record RecoveryJob(String id, String meetingId, StreamKind stream, String path, long offsetSamples) { }
 
-    /** Insert the meeting, its two speakers and its first capture run, unless the meeting already exists. */
+    /** Insert a meeting or open its draft, with speakers and the first run; existing capture runs stay untouched. */
     public void createMeeting(String meetingId, long nowMs) {
         database.write(db -> {
             boolean exists = db.sql("SELECT count(*) FROM meetings WHERE id = ?").param(meetingId)
                     .query(Long.class).single() > 0;
-            if (exists) return null;
-            db.sql("INSERT INTO meetings(id, status, started_at, created_at, updated_at) VALUES (?, 'recording', ?, ?, ?)")
-                    .params(meetingId, nowMs, nowMs, nowMs).update();
+            if (exists) {
+                int opened = db.sql("UPDATE meetings SET status = 'recording', started_at = ?, updated_at = ? "
+                        + "WHERE id = ? AND status = 'draft' AND deleted_at IS NULL")
+                        .params(nowMs, nowMs, meetingId).update();
+                if (opened == 0) return null;
+            } else {
+                db.sql("INSERT INTO meetings(id, status, started_at, created_at, updated_at) VALUES (?, 'recording', ?, ?, ?)")
+                        .params(meetingId, nowMs, nowMs, nowMs).update();
+            }
             for (StreamKind stream : StreamKind.values()) {
                 db.sql("INSERT INTO speakers(id, meeting_id, source, label) VALUES (?, ?, ?, ?)")
                         .params(UuidV7.next(nowMs), meetingId, stream.wireName(), stream.speakerLabel()).update();
@@ -44,8 +50,17 @@ public final class CaptureStore {
         });
     }
 
+    public int runCount(String meetingId) {
+        return database.read(db -> db.sql("SELECT count(*) FROM capture_runs WHERE meeting_id = ?")
+                .param(meetingId).query(Integer.class).single());
+    }
+
     public void beginRun(String meetingId, String agentName, String agentVersion, int protocol, long nowMs) {
-        database.write(db -> { insertRun(db, meetingId, agentName, agentVersion, protocol, nowMs); return null; });
+        database.write(db -> {
+            insertRun(db, meetingId, agentName, agentVersion, protocol, nowMs);
+            db.sql("UPDATE meetings SET ended_at = NULL WHERE id = ?").param(meetingId).update();
+            return null;
+        });
     }
 
     /** Record which agent serves the latest run (the run is created before the agent is known). */
@@ -175,10 +190,11 @@ public final class CaptureStore {
     }
 
     public List<MeetingRow> listMeetings() {
-        return database.read(db -> db.sql("SELECT id, title, status, started_at, ended_at FROM meetings "
+        return database.read(db -> db.sql("SELECT id, title, status, started_at, ended_at, consent_ack_at FROM meetings "
                         + "WHERE deleted_at IS NULL ORDER BY created_at DESC, id DESC")
                 .query((rs, row) -> new MeetingRow(rs.getString("id"), rs.getString("title"), rs.getString("status"),
-                        nullableLong(rs.getObject("started_at")), nullableLong(rs.getObject("ended_at")))).list());
+                        nullableLong(rs.getObject("started_at")), nullableLong(rs.getObject("ended_at")),
+                        nullableLong(rs.getObject("consent_ack_at")))).list());
     }
 
     /** SQLite hands back Integer for small values and Long for large ones. */
