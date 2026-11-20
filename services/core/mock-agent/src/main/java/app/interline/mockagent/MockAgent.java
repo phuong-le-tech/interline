@@ -175,6 +175,13 @@ public final class MockAgent {
         connection.send(ControlMessage.response(request.id(), request.type(), body));
     }
 
+    private boolean calendarSupported() {
+        if (options.denyCalendar()) return true;
+        if (options.script() == null) return false;
+        try { return json.readTree(options.script().toFile()).has("calendar"); }
+        catch (IOException e) { return false; }
+    }
+
     private void answerCalendar(ControlMessage request) throws IOException {
         JsonNode body = request.body();
         if (request.id() == null) return;
@@ -313,7 +320,7 @@ public final class MockAgent {
         ObjectNode capture = capabilities.putObject("capture");
         capture.putArray("streams").add("mic").add("system");
         capture.put("aec", false).put("device_events", options.deviceChangeAtSample() >= 0);
-        capabilities.put("test_input", true).put("calendar", true);
+        capabilities.put("test_input", true).put("calendar", calendarSupported());
         capabilities.putObject("stt").put("engine", STT_ENGINE);
         return body;
     }

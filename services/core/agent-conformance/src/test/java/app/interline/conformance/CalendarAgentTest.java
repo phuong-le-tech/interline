@@ -19,6 +19,13 @@ class CalendarAgentTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     @TempDir Path work;
 
+    @Test void mockWithoutCalendarScriptKeepsManualAndIcsOnlyBehavior() throws Exception {
+        try (Peer p = launch()) {
+            JsonNode hello = p.next(3000);
+            assertThat(hello.path("body").path("capabilities").path("calendar").asBoolean()).isFalse();
+        }
+    }
+
     @Test void mockAdvertisesCalendarAndQueriesScriptedEventsCorrelatedByRe() throws Exception {
         Path script = work.resolve("calendar.json");
         Files.writeString(script, """
