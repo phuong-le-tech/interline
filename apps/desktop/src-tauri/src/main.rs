@@ -69,3 +69,24 @@ fn main() {
         }
     });
 }
+
+#[cfg(test)]
+mod tray_state_tests {
+    use super::validate_tray_state;
+
+    #[test]
+    fn accepts_supported_tray_states() {
+        for state in ["idle", "recording", "warning"] {
+            assert_eq!(validate_tray_state(state), Ok(()), "state: {state:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_tray_states() {
+        for state in [
+            "", "unknown", "degraded", "capture restarting", "IDLE", " idle", "idle ", "recording\n",
+        ] {
+            assert!(validate_tray_state(state).is_err(), "state: {state:?}");
+        }
+    }
+}
