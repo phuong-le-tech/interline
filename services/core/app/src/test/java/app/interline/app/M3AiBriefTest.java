@@ -120,6 +120,42 @@ class M3AiBriefTest {
         assertThat(briefOk(port, meeting).path("ai").path("status").asText()).isEqualTo("ok");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"provider", "model"})
+    void changedGenerationSettingsInvalidateUnchangedBriefInputs(String changed) {
+        configured();
+        generateOk();
+        Object oldHash = M3BriefSupport.rows(data, "SELECT input_hash FROM briefs WHERE meeting_id = ?", meeting)
+                .getFirst().get("input_hash");
+        if (changed.equals("provider")) provider(port, stub, Map.of("is_default", true));
+        else sql(data, "UPDATE providers SET model = 'another-model' WHERE is_default = 1");
+        JsonNode stale = briefOk(port, meeting).path("ai");
+        assertThat(stale.path("status").asText()).isEqualTo("stale");
+        assertThat(stale.path("lines")).isEmpty();
+        assertThat(stub.chatCalls()).hasSize(1);
+        assertThat(generateOk().path("status").asText()).isEqualTo("ok");
+        assertThat(stub.chatCalls()).hasSize(2);
+        assertThat(M3BriefSupport.rows(data, "SELECT input_hash FROM briefs WHERE meeting_id = ?", meeting)
+                .getFirst().get("input_hash")).isNotEqualTo(oldHash);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"not JSON", "null", "[{}]"})
+    void corruptCacheLeavesRawBriefAvailableAndCanBeRegenerated(String corrupt) {
+        configured();
+        generateOk();
+        sql(data, "UPDATE briefs SET text = ? WHERE meeting_id = ?", corrupt, meeting);
+        JsonNode brief = briefOk(port, meeting);
+        assertThat(brief.path("related")).hasSize(1);
+        assertThat(brief.path("related").get(0).path("notes").get(0).asText())
+                .isEqualTo("Budget decision from my notes");
+        assertThat(brief.path("ai").path("status").asText()).isEqualTo("stale");
+        assertThat(brief.path("ai").path("lines")).isEmpty();
+        assertThat(stub.chatCalls()).hasSize(1);
+        assertThat(generateOk().path("status").asText()).isEqualTo("ok");
+        assertThat(stub.chatCalls()).hasSize(2);
+    }
+
     @Test void invalidOutputRetriesOnceThenReturnsCleanErrorAndWritesNoCache() {
         configured();
         stub.reply("{\"lines\":[{\"text\":\"Invented\",\"sources\":[\"unrelated\"]}]}", "not JSON");

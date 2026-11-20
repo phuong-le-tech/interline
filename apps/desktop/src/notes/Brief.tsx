@@ -58,7 +58,7 @@ export function Brief({ client, meetingId }: { client: CoreClient; meetingId: st
       {!hasProvider && <span>Configure a provider</span>}
       {brief.ai?.status === 'stale' && <p role="status">Brief is stale. Refresh to use the latest context.</p>}
       {error && <p role="alert">{error}</p>}
-      {brief.ai?.status === 'ok' && (
+      {brief.ai?.status === 'ok' && brief.ai.lines.length > 0 && (
         <div className="ai-addition" aria-label="AI brief">
           {brief.ai.lines.map((line, index) => (
             <p key={index}>

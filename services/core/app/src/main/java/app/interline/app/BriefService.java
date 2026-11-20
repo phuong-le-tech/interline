@@ -3,11 +3,13 @@ package app.interline.app;
 import app.interline.ai.BriefInput;
 import app.interline.ai.BriefRunner;
 import app.interline.ai.BriefResult;
+import app.interline.domain.BriefOutput;
 import app.interline.domain.BriefOutput.Line;
+import app.interline.domain.InvalidEnhancementException;
 import app.interline.persistence.AiStore;
 import app.interline.persistence.BriefStore;
+import app.interline.persistence.ProviderStore.ProviderRow;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 
@@ -40,14 +42,21 @@ final class BriefService {
     }
 
     Outcome cached(MeetingService.Brief brief) {
-        return cached(brief, hash(brief));
+        return cached(brief, hash(brief, providers.defaultProvider().orElse(null)));
     }
 
     private Outcome cached(MeetingService.Brief brief, String hash) {
-        return cache.find(brief.meetingId()).map(c -> c.inputHash().equals(hash)
-                ? new Outcome("ok", readLines(c.text()), c.aiRunId(), null)
-                : new Outcome("stale", List.of(), null, null))
-                .orElseGet(() -> new Outcome("missing", List.of(), null, null));
+        return cache.find(brief.meetingId()).map(c -> {
+            if (c.inputHash().equals(hash)) {
+                try {
+                    var ids = Set.copyOf(related(brief).stream().map(BriefInput.RelatedMeeting::meetingId).toList());
+                    return new Outcome("ok", readLines(c.text(), ids), c.aiRunId(), null);
+                } catch (JsonProcessingException | InvalidEnhancementException ignored) {
+                    // A derived cache can be regenerated; preserve access to the raw brief.
+                }
+            }
+            return new Outcome("stale", List.of(), null, null);
+        }).orElseGet(() -> new Outcome("missing", List.of(), null, null));
     }
 
     Outcome write(String meetingId) {
@@ -56,7 +65,7 @@ final class BriefService {
                 "no_provider", "Configure a provider in Settings before writing a brief."));
         if (!running.add(meetingId)) throw ApiProblems.of(HttpStatus.CONFLICT, "brief_running", "A brief is already being written.");
         try {
-            String hash = hash(brief);
+            String hash = hash(brief, provider);
             Outcome cached = cached(brief, hash);
             if (cached.status().equals("ok")) return cached;
             var input = new BriefInput(meetingId, ai.meetingTitle(meetingId).orElse(""),
@@ -88,10 +97,11 @@ final class BriefService {
         }
     }
 
-    private String hash(MeetingService.Brief brief) {
+    private String hash(MeetingService.Brief brief, ProviderRow provider) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
-                    json(List.of(brief.meetingId(), brief.participants(), related(brief),
+                    json(List.of(BriefRunner.PROMPT_VERSION, provider == null ? List.of() : List.of(provider.id(), provider.model()),
+                            brief.meetingId(), brief.participants(), related(brief),
                             brief.related().stream().map(r -> r.match().reason()).toList(), brief.openActions(),
                             ai.meetingTitle(brief.meetingId()).orElse(""))).getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
@@ -114,8 +124,8 @@ final class BriefService {
         catch (JsonProcessingException e) { throw new IllegalStateException("cannot serialize brief", e); }
     }
 
-    private static List<Line> readLines(String text) {
-        try { return JSON.readValue(text, new TypeReference<List<Line>>() { }); }
-        catch (JsonProcessingException e) { throw new IllegalStateException("cannot read cached brief", e); }
+    private static List<Line> readLines(String text, Set<String> relatedIds) throws JsonProcessingException {
+        String document = JSON.createObjectNode().set("lines", JSON.readTree(text)).toString();
+        return BriefOutput.parse(document, relatedIds).lines();
     }
 }

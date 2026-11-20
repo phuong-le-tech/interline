@@ -44,6 +44,15 @@ describe('AI pre-meeting brief', () => {
     expect(core.brief).toHaveBeenCalledTimes(2);
   });
 
+  it('omits an empty AI block when an ok brief has no related meetings', async () => {
+    const core = fake({ status: 'ok', lines: [] });
+    core.brief.mockResolvedValue({ ...raw, related: [], openActions: [], ai: { status: 'ok', lines: [] } });
+    const brief = await open(core);
+    expect(within(brief).queryByLabelText('AI brief')).toBeNull();
+    expect(within(brief).getByText('With Alice')).toBeVisible();
+    expect(core.writeBrief).not.toHaveBeenCalled();
+  });
+
   it('disables Write brief without a provider and explains how to enable it', async () => {
     const core = fake(undefined, false);
     const brief = await open(core);
