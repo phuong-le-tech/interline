@@ -29,6 +29,21 @@ async function open(core: ReturnType<typeof fake>) {
 }
 
 describe('AI pre-meeting brief', () => {
+
+  it('reloads raw context after generation so new citations have matching sources', async () => {
+    const core = fake();
+    const brief = await open(core);
+    const updatedLines = [{ text: 'Review the new decision.', sources: ['new-source'] }];
+    core.writeBrief.mockResolvedValue({ status: 'ok', lines: updatedLines });
+    core.brief.mockResolvedValue({ ...raw, ai: { status: 'ok', lines: updatedLines }, related: [
+      { ...raw.related[0], meetingId: 'new-source', title: 'New related meeting' },
+    ] });
+    fireEvent.click(within(brief).getByRole('button', { name: 'Write brief' }));
+    expect(await within(brief).findByRole('button', { name: 'Source: New related meeting' })).toBeVisible();
+    expect(within(brief).getByText('Review the new decision.')).toBeVisible();
+    expect(core.brief).toHaveBeenCalledTimes(2);
+  });
+
   it('disables Write brief without a provider and explains how to enable it', async () => {
     const core = fake(undefined, false);
     const brief = await open(core);

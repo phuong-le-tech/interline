@@ -91,7 +91,10 @@ export type CalendarEvent = {
   attendees: { name?: string; email?: string }[];
 };
 
+export type AiBrief = { status: 'missing' | 'ok' | 'stale' | 'invalid_output' | 'error'; lines: { text: string; sources: string[] }[]; message?: string };
+
 export type Brief = {
+  ai?: AiBrief;
   meetingId: string;
   participants: { id: string; name: string; email: string | null }[];
   related: { meetingId: string; title: string; date: number; matchedBy: string; notes: string[] }[];
@@ -138,7 +141,7 @@ export class CoreClient {
 
   private url(path: string): string {
     const allowed =
-        /^\/(recording\/(start|stop)|meetings|meetings\/[A-Za-z0-9%-._~]+\/(transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+        /^\/(recording\/(start|stop)|meetings|meetings\/[A-Za-z0-9%-._~]+\/(transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
     if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }
@@ -236,6 +239,10 @@ export class CoreClient {
 
   createMeeting(title: string): Promise<{ id: string }> {
     return this.json('/meetings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+  }
+
+  writeBrief(meetingId: string): Promise<AiBrief> {
+    return this.json(`/meetings/${encodeURIComponent(meetingId)}/brief/ai`, { method: 'POST' });
   }
 
   brief(meetingId: string): Promise<Brief> {
