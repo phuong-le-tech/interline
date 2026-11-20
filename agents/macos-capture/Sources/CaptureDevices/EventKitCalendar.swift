@@ -71,13 +71,12 @@ public final class EventKitCalendar {
         var events: [[String: Any]] = []
         var complete = true
         // EventKit expands recurrences within the predicate window; occurrenceDate keeps moved instances stable.
-        for event in store.events(matching: predicate).sorted(by: { $0.startDate < $1.startDate }) {
+        for event in store.events(matching: predicate) {
             guard event.status != .canceled else { continue }
             guard let identifier = event.calendarItemIdentifier as String?, !identifier.isEmpty else {
                 complete = false
                 continue
             }
-            if events.count == 5000 { complete = false; break }
             let occurrence = event.occurrenceDate ?? event.startDate!
             let attendees = (event.attendees ?? []).map { attendee -> [String: String] in
                 let address = attendee.url.absoluteString

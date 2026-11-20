@@ -71,6 +71,24 @@ class AgentCalendarAcceptanceTest {
         awaitEvents("Updated", "Keep me");
     }
 
+    @Test void oversizedAgentSnapshotUpdatesButNeverDeletesExistingEvents() throws Exception {
+        start(calendarScript(List.of(event("keep", "Keep me")), true), false);
+        awaitEvents("Keep me");
+        var many = new java.util.ArrayList<ObjectNode>();
+        many.add(event("updated", "Updated").put("starts_at", NOW + 10 * DAY).put("ends_at", NOW + 10 * DAY + HOUR));
+        for (int i = 0; i < 200; i++) {
+            many.add(event("large-" + i, "é".repeat(4096))
+                    .put("starts_at", NOW + HOUR + i * 60000L).put("ends_at", NOW + 2 * HOUR + i * 60000L));
+        }
+        writeScript(calendarScript(many, true));
+        JsonNode result = ok(sync(port), "oversized agent sync").json();
+        assertThat(result.path("complete").booleanValue()).isFalse();
+        assertThat(result.path("removed").asInt(-1)).isZero();
+        var stored = events(port).json();
+        assertThat(stored.findValuesAsText("external_id")).contains("keep", "updated");
+        assertThat(stored.size()).isBetween(3, 201);
+    }
+
     @Test void calendarDenialEmitsSseAndLeavesManualMeetingsUsable() throws Exception {
         start(calendarScript(List.of(), true), true);
         JsonNode meeting = ok(call(port, "POST", "/meetings", Map.of("title", "Manual still works")), "manual meeting").json();

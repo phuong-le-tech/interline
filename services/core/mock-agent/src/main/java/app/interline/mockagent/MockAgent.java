@@ -214,7 +214,6 @@ public final class MockAgent {
                 long start = event.path("starts_at").asLong(), end = event.path("ends_at").asLong();
                 if (start < body.path("to_ms").asLong() && (end > body.path("from_ms").asLong()
                         || start == end && start >= body.path("from_ms").asLong())) {
-                    if (events.size() == 5000) { reply.put("complete", false); break; }
                     events.add(event);
                 }
             }
@@ -230,7 +229,30 @@ public final class MockAgent {
                 }
             }
         }
-        connection.send(ControlMessage.response(request.id(), "calendar.events", reply));
+        connection.send(calendarReply(request, reply));
+    }
+
+    private ControlMessage calendarReply(ControlMessage request, ObjectNode body) throws IOException {
+        boolean complete = body.path("complete").booleanValue();
+        var events = body.withArray("events");
+        var nearest = new java.util.ArrayList<JsonNode>();
+        events.forEach(nearest::add);
+        long now = System.currentTimeMillis();
+        nearest.sort(java.util.Comparator.comparingDouble(event -> Math.abs((double) event.path("starts_at").asLong() - now)));
+        events.removeAll();
+        // False is one byte longer than true, so this reserves the worst-case envelope size.
+        body.put("complete", false);
+        ControlMessage reply = ControlMessage.response(request.id(), "calendar.events", body);
+        int bytes = new app.interline.agent.FrameCodec().encodeControl(reply).length + 1;
+        for (JsonNode event : nearest) {
+            if (events.size() == 5000) { complete = false; break; }
+            int size = json.writeValueAsBytes(event).length + (events.isEmpty() ? 0 : 1);
+            if (bytes + size > app.interline.agent.FrameCodec.MAX_CONTROL_LENGTH) { complete = false; continue; }
+            events.add(event);
+            bytes += size;
+        }
+        body.put("complete", complete);
+        return reply;
     }
 
     /** Scripted import: the script regions of the requested stream that fit the file, else one final over all of it. */

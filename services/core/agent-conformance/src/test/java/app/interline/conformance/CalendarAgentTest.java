@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.*;
@@ -43,6 +45,29 @@ class CalendarAgentTest {
             assertThat(reply.path("body").path("events")).isEqualTo(JSON.readTree(script.toFile()).path("calendar").path("events"));
             assertThat(p.call("calendar.query", obj().put("from_ms", 3000).put("to_ms", 4000))
                 .path("body").path("events")).isEmpty();
+        }
+    }
+
+    @Test void oversizedCalendarIsCappedToAFrameWithNearestEventsFirst() throws Exception {
+        long now = System.currentTimeMillis();
+        ObjectNode script = obj();
+        var events = script.putObject("calendar").putArray("events");
+        for (int i = 199; i >= 0; i--) {
+            var event = events.addObject().put("external_id", "event-" + i).put("title", "é".repeat(4096))
+                    .put("starts_at", now + i * 60000L).put("ends_at", now + (i + 1) * 60000L)
+                    .put("calendar_name", "Work").putNull("conference_url");
+            event.putArray("attendees");
+        }
+        Path path = work.resolve("large-calendar.json");
+        JSON.writeValue(path.toFile(), script);
+        try (Peer p = connected("--script=" + path)) {
+            JsonNode reply = p.call("calendar.query", obj().put("from_ms", now - 60000).put("to_ms", now + 86400000));
+            assertThat(reply.path("t").asText()).isEqualTo("calendar.events");
+            assertThat(JSON.writeValueAsBytes(reply).length + 1).isLessThanOrEqualTo(1 << 20);
+            assertThat(reply.path("body").path("complete").booleanValue()).isFalse();
+            var kept = reply.path("body").path("events");
+            assertThat(kept.size()).isBetween(1, 199);
+            for (int i = 0; i < kept.size(); i++) assertThat(kept.get(i).path("external_id").asText()).isEqualTo("event-" + i);
         }
     }
 
@@ -91,6 +116,26 @@ class CalendarAgentTest {
             assertThat(reply.path("body").path("events").isArray()).isTrue();
             assertThat(reply.path("body").path("events")).isEmpty();
             assertThat(reply.path("body").path("complete").asBoolean()).isTrue();
+        }
+    }
+
+    @Test @EnabledIfSystemProperty(named = "interline.swift-agent", matches = ".+")
+    void nativeLiveModeCleanShutdownExitsZero() throws Exception {
+        try (Peer p = nativeConnected()) {
+            assertThat(p.call("shutdown", obj()).path("t").asText()).isEqualTo("shutdown.ok");
+            assertThat(p.process.waitFor(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(p.process.exitValue()).isZero();
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"TERM", "KILL"})
+    @EnabledIfSystemProperty(named = "interline.swift-agent", matches = ".+")
+    void nativeSignalsExitWithTheOriginalUnixStatus(String signal) throws Exception {
+        try (Peer p = nativeConnected()) {
+            if (signal.equals("TERM")) p.process.destroy();
+            else p.process.destroyForcibly();
+            assertThat(p.process.waitFor(3, TimeUnit.SECONDS)).isTrue();
+            assertThat(p.process.exitValue()).isEqualTo(signal.equals("TERM") ? 143 : 137);
         }
     }
 

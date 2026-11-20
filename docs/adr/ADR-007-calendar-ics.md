@@ -49,7 +49,7 @@ When no ICS URL is configured and the agent advertises `capabilities.calendar:tr
 
 The macOS agent uses `requestFullAccessToEvents` and the embedded `NSCalendarsFullAccessUsageDescription`. EventKit expands recurring instances in the window; cancelled instances are omitted. Occurrence identity uses the calendar item identifier plus the original occurrence timestamp. The reply carries the calendar name for protocol clients; the existing domain and storage retain the same minimal event fields as ICS.
 
-Agent snapshots use `source='agent'` with the same window replacement transaction and source-generation guard as ICS. An incomplete snapshot only upserts. Malformed replies fail without modifying storage. Changing to an ICS URL removes agent events, while removing the URL queues an agent refresh. People remain available independently of source removal.
+Agent snapshots use `source='agent'` with the same window replacement transaction and source-generation guard as ICS. Reply envelopes are capped to the 1 MiB frame limit, keeping events nearest to the agent clock first and marking any omission `complete:false`. Completeness is required; an incomplete snapshot only upserts. Malformed replies fail without modifying storage. Changing to an ICS URL removes agent events, while removing the URL queues an agent refresh. People remain available independently of source removal.
 
 Calendar denial clears agent events, emits replayable `calendar.denied` SSE, and shows the neutral banner "Calendar access denied - using manual meetings" with the existing Open System Settings action. Recording and manual meetings remain usable. A successful later refresh emits `calendar.granted` to dismiss the banner.
 

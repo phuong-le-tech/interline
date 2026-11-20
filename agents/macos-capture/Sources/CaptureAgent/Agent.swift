@@ -221,7 +221,11 @@ final class Agent {
                 self.transport.send(.event("permission.denied", ["permission": "calendar", "detection": "tcc_denied",
                                                                  "settings_uri": EventKitCalendar.settingsURI]))
             }
-            self.transport.send(.response(to: message, type: "calendar.events", ["events": events, "complete": complete]))
+            do {
+                self.transport.send(try CalendarReply.make(to: message, events: events, complete: complete))
+            } catch {
+                self.transport.send(.response(to: message, type: "error", self.errorBody("calendar_unavailable", "warn", "Calendar could not be encoded")))
+            }
         }
     }
 
