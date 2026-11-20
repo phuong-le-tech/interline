@@ -42,3 +42,15 @@ M3 needs the user's calendar before a meeting. EventKit (macOS agent) is the v1 
 ## Deferred
 
 EventKit and `calendar.query`/`calendar.changed`, periodic refresh, CalDAV, ETag/If-Modified-Since, VTIMEZONE definitions (IANA and the Windows table only), RDATE, BYSETPOS, purge of old synced events, UI.
+
+## M3 EventKit addendum
+
+When no ICS URL is configured and the agent advertises `capabilities.calendar:true`, `AgentCalendarSource` reads EventKit through the existing private protocol connection. A configured ICS URL retains priority and its existing manual-sync behavior. The core refreshes the agent calendar on connection, every 5 minutes, and on `calendar.changed`; the agent debounces OS store changes for 500 ms. No network call is introduced.
+
+The macOS agent uses `requestFullAccessToEvents` and the embedded `NSCalendarsFullAccessUsageDescription`. EventKit expands recurring instances in the window; cancelled instances are omitted. Occurrence identity uses the calendar item identifier plus the original occurrence timestamp. The reply carries the calendar name for protocol clients; the existing domain and storage retain the same minimal event fields as ICS.
+
+Agent snapshots use `source='agent'` with the same window replacement transaction and source-generation guard as ICS. An incomplete snapshot only upserts. Malformed replies fail without modifying storage. Changing to an ICS URL removes agent events, while removing the URL queues an agent refresh. People remain available independently of source removal.
+
+Calendar denial clears agent events, emits replayable `calendar.denied` SSE, and shows the neutral banner "Calendar access denied - using manual meetings" with the existing Open System Settings action. Recording and manual meetings remain usable. A successful later refresh emits `calendar.granted` to dismiss the banner.
+
+MockAgent advertises calendar support only with a calendar script or `--deny=calendar`, preserving existing manual and ICS-only fixtures. It supports `--deny=calendar` and script JSON `calendar:{events,complete,changes:[{after_ms,events,complete}]}`; timed changes begin at the first query. Portable conformance tests exercise this contract. Native status and test-input queries run with the existing `interline.swift-agent` property; a real EventKit read is separately gated by `interline.calendar.native=true` because it needs the user's permission and calendar data. Real account reads and permission-prompt behavior remain manual checks.

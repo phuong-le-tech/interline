@@ -60,3 +60,9 @@ Versioning model: `protocol` major integer in every envelope (`"v":1`); optional
 
 - Positive: OS-neutral seam, trivial to fake, crash-isolated, debuggable (`tools/` can dump a session as NDJSON + raw PCM), no network surface.
 - Negative: a hand-written codec in Java and in Swift (and later in each agent's language), kept honest by the shared golden files; a binary audio header to keep consistent across languages; agent and core must agree on spool semantics.
+
+## M3 calendar addendum
+
+Protocol v1 adds `capabilities.calendar` (boolean, absent means unsupported), `calendar.query {from_ms,to_ms}` with an `id`, correlated `calendar.events {events,complete}` with `re`, and unsolicited `calendar.changed {}`. Event fields are `external_id`, `title`, `starts_at`, `ends_at`, `attendees:[{name,email}]`, nullable `conference_url` and `calendar_name`; times are epoch milliseconds. Queries are bounded to 31 days and replies to 5 000 events. `complete` defaults to true; false means that absent events must not be deleted.
+
+`permission.status`, `permission.request` and `permission.denied` accept `calendar`. Status never prompts; a native calendar query requests full EventKit access when needed. Denied or restricted access returns empty events and emits `permission.denied` without stopping capture. The new corpus is isolated in `golden/m3`; earlier golden bytes stay unchanged.
