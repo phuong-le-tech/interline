@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
@@ -16,6 +16,7 @@ import { PermissionBanner } from './PermissionBanner';
 import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
 import { Today } from './Today';
+import { Consent } from './Consent';
 
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
@@ -43,6 +44,8 @@ export function App() {
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
+  const [consentMeetingId, setConsentMeetingId] = useState<string | null>();
+  const preparingRecording = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -171,13 +174,36 @@ export function App() {
   const busy = ACTIVE_STATES.has(state);
 
   const record = async () => {
-    if (!client) return;
+    if (!client || preparingRecording.current || consentMeetingId !== undefined || busy) return;
+    preparingRecording.current = true;
     setError(undefined);
+    try {
+      const settings = await client.consentSettings();
+      const id = selectedMeetingId;
+      const currentMeetings = await client.meetings();
+      setMeetings(currentMeetings);
+      const meeting = currentMeetings.find((meeting) => meeting.id === id);
+      if (id && !meeting) throw new Error('Unknown meeting');
+      if (settings.reminder_enabled && meeting?.consentAckAt == null) {
+        setConsentMeetingId(id ?? null);
+      } else {
+        await startRecording(id ?? (await client.createMeeting('Untitled meeting')).id);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      preparingRecording.current = false;
+    }
+  };
+
+  const startRecording = async (meetingId: string) => {
+    if (!client) return;
+    setSelectedMeetingId(meetingId);
     setBanners({});
     setTranscript(EMPTY_TRANSCRIPT);
     setState('starting');
     try {
-      await client.startRecording();
+      await client.startRecording(meetingId);
       await refreshMeetings(client);
     } catch (e) {
       setState('failed');
@@ -276,6 +302,19 @@ export function App() {
             setPaletteOpen(false);
           }}
         />
+      )}
+      {consentMeetingId !== undefined && client && (
+        <Consent locale={document.documentElement.lang || navigator.language}
+          onCancel={() => setConsentMeetingId(undefined)}
+          onContinue={async (doNotRemind) => {
+            const id = consentMeetingId ?? (await client.createMeeting('Untitled meeting')).id;
+            setConsentMeetingId(id);
+            setSelectedMeetingId(id);
+            await client.acknowledgeConsent(id);
+            if (doNotRemind) await client.setConsentReminder(false);
+            setConsentMeetingId(undefined);
+            await startRecording(id);
+          }} />
       )}
     </main>
   );

@@ -17,6 +17,7 @@ for (const fault of ['--deny=system_audio', '--silent-system']) {
       await openDesktop(page, stack);
       const started = Date.now();
       await page.getByRole('button', { name: 'Record', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
       // A generic permission error is not the actionable, stream-specific banner.
       const banner = page.getByRole('alert').filter({ hasText: "I can't hear the other participants" });
       await expect(banner).toBeVisible({ timeout: Math.max(1, 9_500 - (Date.now() - started)) });
@@ -30,6 +31,7 @@ test('AC12_live - accessible Me and Them meters both vary during recording', asy
   await withM1Stack(undefined, async (stack) => {
     await openDesktop(page, stack);
     await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
     const meters = ['Me', 'Them'].map((name) => page.getByRole('meter', { name, exact: true }));
     // Check both controls even if the first one is missing.
     await Promise.all(meters.map((meter) => expect(meter).toBeVisible()));
@@ -51,6 +53,7 @@ test('AC12_live - the same partial transcript row becomes final without duplicat
   await withM1Stack({ agentArgs: ['--speed=1'] }, async (stack) => {
     await openDesktop(page, stack);
     await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
     const transcript = page.getByRole('list', { name: 'Transcript', exact: true });
     // aria-busy communicates the partial state without relying on a CSS class.
     const partial = transcript.getByRole('listitem').filter({ hasText: /\bMe\b/ })
@@ -76,6 +79,7 @@ test('AC12_live - a real MockAgent crash shows Capture restarting and recovers',
   await withM1Stack({ agentArgs: ['--speed=1', '--crash-at=3s'] }, async (stack) => {
     await openDesktop(page, stack);
     await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('recording');
     // --crash-at exits the real child with code 13. No routed or injected SSE.
     await expect.soft(page.getByRole('alert').filter({ hasText: 'Capture restarting' }))

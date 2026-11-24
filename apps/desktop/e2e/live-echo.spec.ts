@@ -34,6 +34,7 @@ test('AC5_suppressedRowRemovedAndNeverReadded', async ({ page }, info) => {
     async (stack) => {
       await openDesktop(page, stack);
       await page.getByRole('button', { name: 'Record', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
       await expect(page.getByRole('status')).toHaveText('recording');
 
       const transcript = page.getByRole('list', { name: 'Transcript', exact: true });

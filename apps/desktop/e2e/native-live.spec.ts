@@ -19,6 +19,7 @@ test('native agent: short system utterances appear as Them rows in the transcrip
     expect(stack.coreReady, stack.diagnostics()).toBe(true);
     await page.goto('/');
     await page.getByRole('button', { name: 'Record', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Continue', exact: true }).click();
     const row = page.getByRole('list', { name: 'Transcript', exact: true }).getByRole('listitem')
       .filter({ hasText: /\bThem\b/ }).filter({ hasText: SYSTEM_SENTENCE_WORDS }).first();
     await expect(row).toBeVisible({ timeout: FIRST_FINAL_TIMEOUT_MS });

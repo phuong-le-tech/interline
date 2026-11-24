@@ -10,6 +10,7 @@ import app.interline.persistence.CaptureStore;
 import app.interline.persistence.NoteStore;
 import app.interline.persistence.ProviderStore;
 import app.interline.persistence.SearchStore;
+import app.interline.persistence.SettingsStore;
 import app.interline.persistence.TemplateStore;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
@@ -50,6 +51,8 @@ class CoreConfiguration {
     @Bean BriefStore briefStore(DurableCaptureIngest ingest) { return new BriefStore(ingest.database()); }
 
     @Bean MeetingStore meetingStore(DurableCaptureIngest ingest) { return new MeetingStore(ingest.database()); }
+
+    @Bean SettingsStore settingsStore(DurableCaptureIngest ingest) { return new SettingsStore(ingest.database()); }
 
     @Bean MeetingService meetingService(MeetingStore meetings, CalendarStore calendar, Clock clock) {
         return new MeetingService(meetings, calendar, clock);
