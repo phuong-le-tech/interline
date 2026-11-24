@@ -116,7 +116,7 @@ class CoreConfiguration {
 
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
-                                          String coreVersion, ModelService models, AgentSecrets secrets) {
+                                          String coreVersion, ModelService models, AgentSecrets secrets, CalendarService calendar, EventBus events) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -132,6 +132,7 @@ class CoreConfiguration {
                         properties.logDir().resolve("agent.log"), properties.agentHeartbeatInterval(), coreVersion),
                         clock, recording);
                 secrets.bind(capture.secrets());
+                calendar.bind(capture, events);
                 recording.bind(capture);
                 capture.start();
             }

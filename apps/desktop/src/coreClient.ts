@@ -274,7 +274,7 @@ export class CoreClient {
     return this.empty('/calendar/ics-source', { method: 'DELETE' });
   }
 
-  /** The only call that makes the core fetch the calendar; nothing syncs by itself. */
+  /** Requests an immediate sync of the selected calendar source. */
   syncCalendar(): Promise<{ upserted: number; removed: number; complete: boolean; warnings: string[] }> {
     return this.json('/calendar/sync', { method: 'POST' });
   }

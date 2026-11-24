@@ -3,6 +3,7 @@ import { inTauri } from './coreClient';
 import { isSettingsUri, type PermissionKind } from './liveState';
 
 const BANNER_TEXT: Record<PermissionKind, string> = {
+  calendar: 'Calendar access denied - using manual meetings',
   system_audio:
     "I can't hear the other participants. Interline needs System Audio Recording permission to capture them.",
   microphone: "I can't hear you. Interline needs Microphone permission to capture your voice.",

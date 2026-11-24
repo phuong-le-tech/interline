@@ -17,7 +17,17 @@ public class EventBus {
     private final ObjectMapper json = new ObjectMapper();
     private final List<SseEmitter> subscribers = new CopyOnWriteArrayList<>();
 
-    public SseEmitter subscribe() {
+    private boolean calendarDenied;
+    private static final java.util.Map<String, String> CALENDAR_DENIED = java.util.Map.of(
+            "permission", "calendar", "settings_uri", "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars");
+
+    public synchronized void calendarDenied(boolean denied) {
+        boolean changed = calendarDenied != denied;
+        calendarDenied = denied;
+        if (denied || changed) publish(denied ? "calendar.denied" : "calendar.granted", CALENDAR_DENIED);
+    }
+
+    public synchronized SseEmitter subscribe() {
         SseEmitter emitter = new SseEmitter(NO_TIMEOUT);
         subscribers.add(emitter);
         emitter.onCompletion(() -> subscribers.remove(emitter));
@@ -26,6 +36,7 @@ public class EventBus {
         try {
             // An early comment flushes the response headers so clients know the stream is open.
             emitter.send(SseEmitter.event().comment("connected"));
+            if (calendarDenied) emitter.send(SseEmitter.event().name("calendar.denied").data(json.writeValueAsString(CALENDAR_DENIED)));
         } catch (IOException e) {
             subscribers.remove(emitter);
         }

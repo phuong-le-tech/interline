@@ -8,7 +8,7 @@ import java.nio.file.Path;
  * {@code crashAtSample} are negative when the fault is off.
  */
 record MockOptions(int protocol, Path wav, Path script, double speed, long crashAtSample, boolean denySystemAudio,
-                   long deviceChangeAtSample, boolean silentSystem) {
+                   long deviceChangeAtSample, boolean silentSystem, boolean denyCalendar) {
     private static final int SAMPLE_RATE = 16000;
 
     static MockOptions parse(String[] args) {
@@ -20,6 +20,7 @@ record MockOptions(int protocol, Path wav, Path script, double speed, long crash
         long deviceChangeAt = -1;
         boolean deny = false;
         boolean silent = false;
+        boolean denyCalendar = false;
         for (String arg : args) {
             int equals = arg.indexOf('=');
             String key = equals < 0 ? arg : arg.substring(0, equals);
@@ -32,13 +33,17 @@ record MockOptions(int protocol, Path wav, Path script, double speed, long crash
                 case "--speed" -> speed = Double.parseDouble(value);
                 case "--crash-at" -> crashAt = samples(value);
                 case "--device-change-at" -> deviceChangeAt = samples(value);
-                case "--deny" -> deny = value.equals("system_audio");
+                case "--deny" -> {
+                    if (value.equals("calendar")) denyCalendar = true;
+                    else if (value.equals("system_audio")) deny = true;
+                    else throw new IllegalArgumentException("unknown permission " + value);
+                }
                 case "--silent-system" -> silent = true;
                 default -> throw new IllegalArgumentException("unknown option " + arg);
             }
         }
         if (speed <= 0) throw new IllegalArgumentException("--speed must be positive");
-        return new MockOptions(protocol, wav, script, speed, crashAt, deny, deviceChangeAt, silent);
+        return new MockOptions(protocol, wav, script, speed, crashAt, deny, deviceChangeAt, silent, denyCalendar);
     }
 
     private static long samples(String seconds) {

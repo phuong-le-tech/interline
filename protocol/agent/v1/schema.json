@@ -13,7 +13,7 @@
                "error", "shutdown", "shutdown.ok",
                "level", "stt.partial", "device.changed", "permission.status", "permission.request",
                "permission.denied", "transcribe.file", "transcribe.file.done",
-               "secret.get", "secret.put", "secret.delete"]
+               "secret.get", "secret.put", "secret.delete", "calendar.query", "calendar.events", "calendar.changed"]
     },
     "id": { "type": "string" },
     "re": { "type": "string" },
@@ -42,11 +42,37 @@
     { "if": { "properties": { "t": { "const": "permission.denied" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/permissionDenied" } } } },
     { "if": { "properties": { "t": { "const": "transcribe.file" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFile" } } } },
     { "if": { "properties": { "t": { "const": "transcribe.file.done" } }, "required": ["t"] }, "then": { "properties": { "body": { "$ref": "#/$defs/transcribeFileDone" } } } },
+    { "if": { "properties": { "t": { "const": "calendar.query" } }, "required": ["t"] }, "then": { "required": ["id"], "properties": { "body": { "$ref": "#/$defs/calendarQuery" } } } },
+    { "if": { "properties": { "t": { "const": "calendar.events" } }, "required": ["t"] }, "then": { "required": ["re"], "properties": { "body": { "$ref": "#/$defs/calendarEvents" } } } },
     { "if": { "properties": { "t": { "const": "secret.get" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretGetRequest" } } } },
     { "if": { "properties": { "t": { "const": "secret.put" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretPutRequest" } } } },
     { "if": { "properties": { "t": { "const": "secret.delete" } }, "required": ["t", "id"] }, "then": { "properties": { "body": { "$ref": "#/$defs/secretDeleteRequest" } } } }
   ],
   "$defs": {
+    "calendarQuery": {
+      "type": "object", "required": ["from_ms", "to_ms"],
+      "properties": { "from_ms": { "type": "integer" }, "to_ms": { "type": "integer" } }
+    },
+    "calendarEvents": {
+      "type": "object", "required": ["events", "complete"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "events": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/calendarEvent" } }
+      }
+    },
+    "calendarEvent": {
+      "type": "object",
+      "required": ["external_id", "title", "starts_at", "ends_at", "attendees", "conference_url", "calendar_name"],
+      "properties": {
+        "external_id": { "type": "string", "minLength": 1 }, "title": { "type": "string" },
+        "starts_at": { "type": "integer" }, "ends_at": { "type": "integer" },
+        "conference_url": { "type": ["string", "null"] }, "calendar_name": { "type": "string" },
+        "attendees": { "type": "array", "items": {
+          "type": "object", "required": ["name", "email"],
+          "properties": { "name": { "type": "string" }, "email": { "type": "string" } }
+        } }
+      }
+    },
     "secretAccount": { "type": "string", "minLength": 1 },
     "secretGetRequest": {
       "description": "Request {account}. The reply (carries re, not id) is secret.get with {value}, or error secret_not_found.",
@@ -96,17 +122,18 @@
       "type": "object",
       "description": "Request: permission.status carries 'permissions', permission.request carries 'permission'. Response: current states; a status query never prompts.",
       "properties": {
-        "permissions": { "type": "array", "items": { "enum": ["microphone", "system_audio"] } },
-        "permission": { "enum": ["microphone", "system_audio"] },
+        "permissions": { "type": "array", "items": { "enum": ["microphone", "system_audio", "calendar"] } },
+        "permission": { "enum": ["microphone", "system_audio", "calendar"] },
         "microphone": { "$ref": "#/$defs/permissionState" },
-        "system_audio": { "$ref": "#/$defs/permissionState" }
+        "system_audio": { "$ref": "#/$defs/permissionState" },
+        "calendar": { "$ref": "#/$defs/permissionState" }
       }
     },
     "permissionDenied": {
       "type": "object",
       "required": ["permission", "detection", "settings_uri"],
       "properties": {
-        "session_id": { "type": "string" }, "permission": { "enum": ["microphone", "system_audio"] },
+        "session_id": { "type": "string" }, "permission": { "enum": ["microphone", "system_audio", "calendar"] },
         "detection": { "enum": ["silent_stream", "tcc_denied"] }, "settings_uri": { "type": "string" }
       }
     },
@@ -143,7 +170,7 @@
             "os_version": { "type": "string" }, "arch": { "type": "string" }
           }
         },
-        "capabilities": { "type": "object" }
+        "capabilities": { "type": "object", "properties": { "calendar": { "type": "boolean" } } }
       }
     },
     "helloAck": {

@@ -307,7 +307,7 @@ for (name, silence, target, maximum, overlap) in [
     }
 }
 // M1 lives in golden/m1/ so the unchanged M0 Java GoldenTest (non-recursive, exactly 15 M0 types) never sees it.
-for filename in ["m0.ndjson", "m1/m1.ndjson"] {
+for filename in ["m0.ndjson", "m1/m1.ndjson", "m3/m3.ndjson"] {
     test("AC3_\(filename)_corpus_present_nonempty") {
         let file = goldens.appendingPathComponent(filename)
         try require(FileManager.default.fileExists(atPath: file.path), "missing shared golden \(filename)")
@@ -316,7 +316,7 @@ for filename in ["m0.ndjson", "m1/m1.ndjson"] {
 }
 // Discover future M1 corpus additions without changing shared goldens.
 do {
-    let files = ["m0.ndjson", "m1/m1.ndjson"].map { goldens.appendingPathComponent($0) }
+    let files = ["m0.ndjson", "m1/m1.ndjson", "m3/m3.ndjson"].map { goldens.appendingPathComponent($0) }
     for file in files {
         for (index, bytes) in try rows(file).enumerated() {
             let original = try object(bytes)
@@ -659,6 +659,48 @@ test("AC19_keychain_itemsLiveUnderServiceAppInterline") {
     } catch SecretStoreError.notFound {
         // expected
     }
+}
+
+test("M3_calendar_query_validates_integer_window") {
+    let valid: [String: Any] = ["v": 1, "t": "calendar.query", "id": "c-calendar", "ts": 0,
+                                "body": ["from_ms": 0, "to_ms": 1000]]
+    _ = try WireCodec.decodeControl(json(valid))
+    for body: [String: Any] in [["to_ms": 1000], ["from_ms": false, "to_ms": 1000],
+                                ["from_ms": 1000, "to_ms": 0], ["from_ms": 0, "to_ms": 32 * 86400000]] {
+        var bad = valid
+        bad["body"] = body
+        try rejects { _ = try WireCodec.decodeControl(json(bad)) }
+    }
+}
+
+test("M3_calendar_reply_caps_encoded_frame_and_keeps_nearest_first") {
+    let request = ControlMessage(type: "calendar.query", id: String(repeating: "c", count: 256))
+    let events: [[String: Any]] = (0..<200).reversed().map { index in
+        ["external_id": "event-\(index)", "starts_at": index * 60000,
+         "title": String(repeating: "\"\\\né", count: 700)]
+    }
+    let reply = try CalendarReply.make(to: request, events: events, complete: true, nowMS: 0)
+    let frame = try WireCodec.controlFrame(reply)
+    try require(frame.count - 4 <= WireCodec.maxControlLength, "kind and JSON fit the control frame limit")
+    let decoded = try WireCodec.decodeControl(Data(frame.dropFirst(5)))
+    try require(decoded.replyTo == request.id && decoded.body["complete"] as? Bool == false, "truncated reply is correlated and incomplete")
+    let kept = decoded.body["events"] as! [[String: Any]]
+    try require(!kept.isEmpty && kept.count < events.count, "oversized snapshot is capped")
+    for (index, event) in kept.enumerated() {
+        try require(event["external_id"] as? String == "event-\(index)", "nearest events stay first")
+    }
+}
+
+test("M3_calendar_reply_skips_one_oversize_event_and_retains_small_events") {
+    let request = ControlMessage(type: "calendar.query", id: "c-calendar")
+    let reply = try CalendarReply.make(to: request, events: [
+        ["starts_at": 0, "title": String(repeating: "x", count: WireCodec.maxControlLength)],
+        ["starts_at": 1, "title": "Keep me"]
+    ], complete: true, nowMS: 0)
+    try require(reply.body["complete"] as? Bool == false, "oversized event marks snapshot incomplete")
+    let kept = reply.body["events"] as! [[String: Any]]
+    try require(kept.count == 1 && kept[0]["title"] as? String == "Keep me", "other events still sync")
+    _ = try WireCodec.controlFrame(reply)
 }
 
 var failures = 0
