@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
 import {
   EMPTY_TRANSCRIPT,
+  CALENDAR_SETTINGS_URI,
   MICROPHONE_SETTINGS_URI,
   SYSTEM_AUDIO_SETTINGS_URI,
   applyLiveEvent,
@@ -44,6 +45,8 @@ export function App() {
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
+  const [consentMeetingId, setConsentMeetingId] = useState<string | null>();
+  const preparingRecording = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,9 +90,19 @@ export function App() {
         case 'transcript.suppressed':
           setTranscript((current) => applyLiveEvent(current, event.name, data));
           break;
+        case 'calendar.denied':
+          setBanners((current) => ({ ...current, calendar: CALENDAR_SETTINGS_URI }));
+          break;
+        case 'calendar.granted':
+          setBanners((current) => {
+            const next = { ...current };
+            delete next.calendar;
+            return next;
+          });
+          break;
         case 'permission.denied': {
-          const kind: PermissionKind = data.permission === 'microphone' ? 'microphone' : 'system_audio';
-          const fallback = kind === 'microphone' ? MICROPHONE_SETTINGS_URI : SYSTEM_AUDIO_SETTINGS_URI;
+          const kind: PermissionKind = data.permission === 'calendar' ? 'calendar' : data.permission === 'microphone' ? 'microphone' : 'system_audio';
+          const fallback = kind === 'calendar' ? CALENDAR_SETTINGS_URI : kind === 'microphone' ? MICROPHONE_SETTINGS_URI : SYSTEM_AUDIO_SETTINGS_URI;
           setBanners((current) => ({ ...current, [kind]: text(data.settings_uri) || fallback }));
           break;
         }
@@ -180,13 +193,36 @@ export function App() {
   }, [tray]);
 
   const record = async () => {
-    if (!client) return;
+    if (!client || preparingRecording.current || consentMeetingId !== undefined || busy) return;
+    preparingRecording.current = true;
     setError(undefined);
+    try {
+      const settings = await client.consentSettings();
+      const id = selectedMeetingId;
+      const currentMeetings = await client.meetings();
+      setMeetings(currentMeetings);
+      const meeting = currentMeetings.find((meeting) => meeting.id === id);
+      if (id && !meeting) throw new Error('Unknown meeting');
+      if (settings.reminder_enabled && meeting?.consentAckAt == null) {
+        setConsentMeetingId(id ?? null);
+      } else {
+        await startRecording(id ?? (await client.createMeeting('Untitled meeting')).id);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      preparingRecording.current = false;
+    }
+  };
+
+  const startRecording = async (meetingId: string) => {
+    if (!client) return;
+    setSelectedMeetingId(meetingId);
     setBanners({});
     setTranscript(EMPTY_TRANSCRIPT);
     setState('starting');
     try {
-      await client.startRecording();
+      await client.startRecording(meetingId);
       await refreshMeetings(client);
     } catch (e) {
       setState('failed');
@@ -285,6 +321,19 @@ export function App() {
             setPaletteOpen(false);
           }}
         />
+      )}
+      {consentMeetingId !== undefined && client && (
+        <Consent locale={document.documentElement.lang || navigator.language}
+          onCancel={() => setConsentMeetingId(undefined)}
+          onContinue={async (doNotRemind) => {
+            const id = consentMeetingId ?? (await client.createMeeting('Untitled meeting')).id;
+            setConsentMeetingId(id);
+            setSelectedMeetingId(id);
+            await client.acknowledgeConsent(id);
+            if (doNotRemind) await client.setConsentReminder(false);
+            setConsentMeetingId(undefined);
+            await startRecording(id);
+          }} />
       )}
     </main>
   );

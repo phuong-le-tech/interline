@@ -139,7 +139,7 @@ Fallback binding (only if the M1 TCC spike requires the shell to be the agent's 
     "capture":{"streams":["mic","system"],"aec":true,"device_events":true},
     "stt":{"engine":"whisper.cpp","engine_version":"1.9.5","partials":true,"accel":"metal","transcribe_file":true},
     "permissions":["microphone","system_audio","calendar"],
-    "calendar":{"source":"eventkit"},
+    "calendar":true,
     "secrets":{"store":"keychain"},
     "test_input":true
   }}}
@@ -165,7 +165,7 @@ Negotiation: the core picks the highest major present in both ranges. No overlap
 | `device.changed` | A->C | event | Default device changed, stream rebuilt |
 | `permission.status` / `permission.request` | C->A / A->C | req/resp | Read or trigger the OS prompt |
 | `permission.denied` | A->C | event | Denied explicitly or detected (silent tap) |
-| `calendar.query` / `calendar.events` | C->A / A->C | req/resp | Events in a window |
+| `calendar.query` / `calendar.events` | C->A / A->C | req/resp | `{from_ms,to_ms}` -> correlated `re` with `{events,complete}` |
 | `calendar.changed` | A->C | event | OS calendar store changed |
 | `secret.get` / `secret.put` / `secret.delete` | C->A | req | OS secret store (Keychain, Credential Manager, libsecret) |
 | `transcribe.file` | C->A | req + events | Import of an audio file (US-1.7), emits `stt.final` |
@@ -249,7 +249,7 @@ Codes: `bad_frame`, `unsupported_message`, `protocol_version_unsupported`, `inva
 
 ### 5.9 Non-capture requests
 - `permission.status {permissions:[...]}` -> `{microphone:"granted|denied|not_determined|restricted", system_audio:"granted|unknown|denied", calendar:...}`. `permission.request {permission}` triggers the OS prompt when the OS allows it. macOS has no API to ask for the system-audio permission in advance: the prompt appears on first tap creation, so `system_audio` stays `unknown` until a session runs (draft 1 finding).
-- `calendar.query {from_ms, to_ms}` -> `calendar.events {events:[{external_id, title, starts_at, ends_at, attendees:[{name,email}], conference_url, calendar_name}]}`.
+- `calendar.query {from_ms, to_ms}` -> `calendar.events {events:[{external_id, title, starts_at, ends_at, attendees:[{name,email}], conference_url, calendar_name}], complete:true}` correlated by `re`. Times are epoch milliseconds; the window is at most 31 days. `complete` is required; missing or non-boolean completeness rejects the snapshot before any write. False permits upserts only, never deletion. `capabilities.calendar:true` advertises support. `calendar.changed {}` is debounced for 500 ms by the macOS agent. EventKit expands recurrences and cancelled events are skipped. Calendar status queries never prompt; the first query may request full access. Denied or restricted access returns an empty snapshot and `permission.denied` with `permission:"calendar"`.
 - `secret.get {account}` -> `{value}` or `error secret_not_found`. Keys transit only on this private pipe and are never logged on either side.
 
 ## 6. The IPC port as seen from the core
@@ -299,7 +299,7 @@ public interface PlatformCapabilities {
 
 **MockAgent (mandatory).** Module `mock-agent`, a runnable jar speaking Agent Protocol v1:
 - `--wav=fixtures/audio/standup-fr-2min.wav` (stereo: left = mic, right = system) and `--script=fixtures/audio/standup-fr-2min.transcript.json` (VAD regions and STT text per stream, so no whisper is needed in CI).
-- `--speed=1|10|50` (real time or accelerated), `--calendar=fixtures/calendar/week.json`, in-memory secret store.
+- `--speed=1|10|50` (real time or accelerated), `--script=<json>` with `calendar:{events,complete,changes:[{after_ms,events,complete}]}` and `--deny=calendar`, in-memory secret store.
 - Fault injection: `--crash-at=45s`, `--hang-at=30s`, `--deny=system_audio`, `--silent-system`, `--device-change-at=20s`, `--ignore-window` (backpressure abuse), `--corrupt-frame-at=10s`, `--protocol=2`.
 - Used by contract tests, the end-to-end pipeline test, UI Playwright tests, and local development of the UI without any audio (`./dev --mock`).
 
@@ -399,6 +399,7 @@ Unchanged in substance from draft 1, now in `core-ai` with Spring AI:
 - macOS v1: EventKit through the agent (`calendar.query`, `calendar.changed`); covers Google, Exchange and iCloud accounts added to macOS Internet Accounts. No OAuth in v1 (an OAuth client secret cannot stay secret in an open source app; app verification cost).
 - Portable fallback in the core: **ICS subscription URL** (`IcsCalendarSource`, pure Java), usable on every OS, and the primary Linux path together with CalDAV later.
 - Sync window -1 day / +14 days, refresh on start, every 5 min, and on `calendar.changed`. Minimal copy in `calendar_events`.
+- An ICS URL takes precedence over the advertised agent calendar. Agent refresh runs on connection, every 5 minutes and on `calendar.changed`; ICS fetching stays manual. Denial clears agent events and emits replayable `calendar.denied` SSE; the neutral settings banner leaves manual meetings usable.
 - Without a calendar: manual meetings, the brief matches on title and participants. The app is fully usable.
 
 ## 13. Data model (SQLite, Flyway `V1__init.sql`)
@@ -481,9 +482,10 @@ CREATE TABLE calendar_events (id TEXT PRIMARY KEY,
   source TEXT NOT NULL CHECK (source IN ('agent','ics','manual')),   -- d2: was 'eventkit'
   external_id TEXT, title TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
   conference_url TEXT, attendees TEXT, synced_at INTEGER, UNIQUE (source, external_id));
-CREATE TABLE briefs (id TEXT PRIMARY KEY, calendar_event_id TEXT REFERENCES calendar_events(id) ON DELETE CASCADE,
-  meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE, content_md TEXT NOT NULL,
-  source_meeting_ids TEXT NOT NULL, ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
+-- V6, ADR-012: derived cache, JSON lines with related meeting citations; only returned when input_hash matches.
+CREATE TABLE briefs (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL UNIQUE REFERENCES meetings(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, input_hash TEXT NOT NULL,
+  ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
 CREATE TABLE providers (id TEXT PRIMARY KEY,           -- NO key here
   kind TEXT NOT NULL CHECK (kind IN ('openai_compatible','anthropic','ollama')),
   name TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL,
@@ -497,7 +499,9 @@ CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='transcript_segments'
   tokenize='unicode61 remove_diacritics 2');
 -- + AFTER INSERT/UPDATE/DELETE triggers keeping both FTS indexes in sync; indexes as in draft 1.
 ```
-**V4 (M3) differences.** `V4__m3_calendar.sql` (Flyway location `db/migration-m3`) creates `calendar_events`, `people`, `meeting_participants` and adds `meetings.calendar_event_id`, plus an index on `calendar_events(starts_at)`. `people.email` is stored lower-cased. `calendar_events.attendees` is JSON text `[{"name":...,"email":...}]`; attendees without an email live only there. Sync keeps `source = 'ics'` rows only; the subscription URL is not in the database (ADR-007).
+**V4 (M3) differences.** `V4__m3_calendar.sql` (Flyway location `db/migration-m3`) creates `calendar_events`, `people`, `meeting_participants` and adds `meetings.calendar_event_id`, plus an index on `calendar_events(starts_at)`. `people.email` is stored lower-cased. `calendar_events.attendees` is JSON text `[{"name":...,"email":...}]`; attendees without an email live only there. Sync replaces only the selected source (`ics` or `agent`) in the window; partial snapshots never delete absent rows; the subscription URL is not in the database (ADR-007).
+
+**V5 (M3 consent).** `V5__m3_consent.sql`, in the same Flyway location, adds nullable `meetings.consent_ack_at` (epoch milliseconds) and seeds `settings['consent.reminder_enabled']` as `true` without replacing an existing preference. Acknowledgement is idempotent and does not assert participant consent. The UI reads `GET /api/v1/settings/consent`, optionally saves `{reminder_enabled: false}` through `PUT`, and calls `POST /api/v1/meetings/{id}/consent-ack` before recording. Meeting responses expose `consentAckAt`, including null. Recording accepts an optional `meetingId`, opening a draft or appending a capture run using the existing resume protocol; omitting it still creates a new meeting. The core never gates capture on acknowledgement. A code rollback must retain the V5 migration resource and additive column and setting so Flyway validation can still succeed; no user data is removed. Deploy the migrated core before the new UI, which requires the consent endpoints.
 
 FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` (`MigrationTest` asserts it at M0). Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
 

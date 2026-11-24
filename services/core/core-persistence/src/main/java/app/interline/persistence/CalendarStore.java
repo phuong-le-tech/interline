@@ -46,12 +46,21 @@ public final class CalendarStore {
      */
     public SyncCounts replaceIcsWindow(List<CalendarEvent> events, long windowStartMs, long windowEndMs, long nowMs,
                                        boolean deleteAbsent) {
+        return replaceWindow(ICS, events, windowStartMs, windowEndMs, nowMs, deleteAbsent);
+    }
+
+    public SyncCounts replaceAgentWindow(List<CalendarEvent> events, long from, long to, long now, boolean deleteAbsent) {
+        return replaceWindow("agent", events, from, to, now, deleteAbsent);
+    }
+
+    private SyncCounts replaceWindow(String source, List<CalendarEvent> events, long windowStartMs, long windowEndMs,
+                                     long nowMs, boolean deleteAbsent) {
         return database.write(db -> {
             int upserted = 0;
             Set<String> present = new HashSet<>();
             for (CalendarEvent event : events) {
                 present.add(event.externalId());
-                if (upsertEvent(db, event, nowMs)) upserted++;
+                if (upsertEvent(db, source, event, nowMs)) upserted++;
                 for (Attendee attendee : event.attendees()) {
                     if (attendee.email() != null && !attendee.email().isBlank()) {
                         upsertPerson(db, attendee.name(), attendee.email(), nowMs);
@@ -62,7 +71,7 @@ public final class CalendarStore {
             if (!deleteAbsent) return new SyncCounts(upserted, 0);
             record WindowRow(String id, String externalId) { }
             List<WindowRow> inWindow = db.sql("SELECT id, external_id FROM calendar_events WHERE source = ? AND " + OVERLAPS)
-                    .params(ICS, windowEndMs, windowStartMs)
+                    .params(source, windowEndMs, windowStartMs)
                     .query((rs, rowNum) -> new WindowRow(rs.getString(1), rs.getString(2))).list();
             for (WindowRow row : inWindow) {
                 if (row.externalId() != null && present.contains(row.externalId())) continue;
@@ -73,14 +82,14 @@ public final class CalendarStore {
     }
 
     /** True when a row was inserted or its content changed. */
-    private static boolean upsertEvent(JdbcClient db, CalendarEvent event, long nowMs) {
+    private static boolean upsertEvent(JdbcClient db, String source, CalendarEvent event, long nowMs) {
         String attendees = AttendeesJson.encode(event.attendees());
         EventRow current = db.sql(EVENT_COLUMNS + "WHERE source = ? AND external_id = ?")
-                .params(ICS, event.externalId()).query(CalendarStore::event).optional().orElse(null);
+                .params(source, event.externalId()).query(CalendarStore::event).optional().orElse(null);
         if (current == null) {
             db.sql("INSERT INTO calendar_events(id, source, external_id, title, starts_at, ends_at, conference_url, attendees, synced_at) "
                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                    .params(UuidV7.next(nowMs), ICS, event.externalId(), event.title(), event.startsAt(), event.endsAt(),
+                    .params(UuidV7.next(nowMs), source, event.externalId(), event.title(), event.startsAt(), event.endsAt(),
                             event.conferenceUrl(), attendees, nowMs).update();
             return true;
         }
@@ -101,6 +110,10 @@ public final class CalendarStore {
     /** Removes every ICS event; meetings that pointed at one keep existing with no event. */
     public int deleteIcsEvents() {
         return database.write(db -> db.sql("DELETE FROM calendar_events WHERE source = ?").param(ICS).update());
+    }
+
+    public int deleteAgentEvents() {
+        return database.write(db -> db.sql("DELETE FROM calendar_events WHERE source = 'agent'").update());
     }
 
     public PersonRow upsertPerson(String displayName, String email, long nowMs) {

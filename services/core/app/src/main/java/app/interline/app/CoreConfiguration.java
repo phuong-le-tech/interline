@@ -3,12 +3,14 @@ package app.interline.app;
 import app.interline.agent.AgentPlatformCapabilities;
 import app.interline.ai.ConnectionTester;
 import app.interline.persistence.AiStore;
+import app.interline.persistence.BriefStore;
 import app.interline.persistence.CalendarStore;
 import app.interline.persistence.MeetingStore;
 import app.interline.persistence.CaptureStore;
 import app.interline.persistence.NoteStore;
 import app.interline.persistence.ProviderStore;
 import app.interline.persistence.SearchStore;
+import app.interline.persistence.SettingsStore;
 import app.interline.persistence.TemplateStore;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
@@ -46,10 +48,19 @@ class CoreConfiguration {
 
     @Bean CalendarStore calendarStore(DurableCaptureIngest ingest) { return new CalendarStore(ingest.database()); }
 
+    @Bean BriefStore briefStore(DurableCaptureIngest ingest) { return new BriefStore(ingest.database()); }
+
     @Bean MeetingStore meetingStore(DurableCaptureIngest ingest) { return new MeetingStore(ingest.database()); }
+
+    @Bean SettingsStore settingsStore(DurableCaptureIngest ingest) { return new SettingsStore(ingest.database()); }
 
     @Bean MeetingService meetingService(MeetingStore meetings, CalendarStore calendar, Clock clock) {
         return new MeetingService(meetings, calendar, clock);
+    }
+
+    @Bean BriefService briefService(MeetingService meetings, BriefStore cache, AiStore ai,
+                                    ProviderService providers, Clock clock) {
+        return new BriefService(meetings, cache, ai, providers, clock);
     }
 
     @Bean CalendarService calendarService(CalendarStore store, AgentSecrets secrets, Clock clock, InterlineProperties properties) {
@@ -105,7 +116,7 @@ class CoreConfiguration {
 
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
-                                          String coreVersion, ModelService models, AgentSecrets secrets) {
+                                          String coreVersion, ModelService models, AgentSecrets secrets, CalendarService calendar, EventBus events) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -121,6 +132,7 @@ class CoreConfiguration {
                         properties.logDir().resolve("agent.log"), properties.agentHeartbeatInterval(), coreVersion),
                         clock, recording);
                 secrets.bind(capture.secrets());
+                calendar.bind(capture, events);
                 recording.bind(capture);
                 capture.start();
             }

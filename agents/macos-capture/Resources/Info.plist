@@ -12,6 +12,8 @@
   <string>0.1.0</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.2</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Interline reads your calendar to show upcoming meetings on this Mac. Calendar data stays on your computer.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Interline records your voice to transcribe the meeting on this Mac. Audio never leaves your computer.</string>
   <key>NSAudioCaptureUsageDescription</key>

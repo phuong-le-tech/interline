@@ -36,6 +36,9 @@ final class Agent {
     private let transcriber: Transcriber
     private let defaults: ModelDefaults
     private let secrets = KeychainSecretStore()
+    private lazy var calendar = EventKitCalendar { [weak self] in
+        self?.transport.send(.event("calendar.changed", [:]))
+    }
     private var session: CaptureSession?
     private var heartbeat: DispatchSourceTimer?
     private var input: TestInput?
@@ -49,6 +52,7 @@ final class Agent {
     func run() -> Int32 {
         transport.send(ControlMessage(type: "hello", id: "a-1", body: helloBody()))
         guard handshake() else { return ExitCode.protocolMismatch }
+        if isLive { _ = calendar }
         startHeartbeat()
         while true {
             switch transport.next() {
@@ -87,6 +91,7 @@ final class Agent {
         case "audio.ack": acknowledge(message)
         case "transcribe.file": importFile(message)
         case "permission.status", "permission.request": answerPermissions(message)
+        case "calendar.query": answerCalendar(message)
         case "secret.get", "secret.put", "secret.delete": answerSecret(message)
         default:
             // Unknown requests are answered, unknown events are ignored (ARCHITECTURE 5.1).
@@ -195,8 +200,43 @@ final class Agent {
         }
     }
 
+    private func answerCalendar(_ message: ControlMessage) {
+        guard message.id != nil else { return }
+        guard let from = WireCodec.integer(message.body["from_ms"]), let to = WireCodec.integer(message.body["to_ms"]),
+              to > from, Double(to) - Double(from) <= 31 * 86400000 else {
+            transport.send(.response(to: message, type: "error", errorBody("invalid_request", "warn", "Invalid calendar window")))
+            return
+        }
+        guard isLive else {
+            transport.send(.response(to: message, type: "calendar.events", ["events": [], "complete": true]))
+            return
+        }
+        calendar.query(from: from, to: to) { [weak self] events, complete, permission, failed in
+            guard let self else { return }
+            if failed {
+                self.transport.send(.response(to: message, type: "error", self.errorBody("calendar_unavailable", "warn", "Calendar could not be read")))
+                return
+            }
+            if permission == .denied || permission == .restricted {
+                self.transport.send(.event("permission.denied", ["permission": "calendar", "detection": "tcc_denied",
+                                                                 "settings_uri": EventKitCalendar.settingsURI]))
+            }
+            do {
+                self.transport.send(try CalendarReply.make(to: message, events: events, complete: complete))
+            } catch {
+                self.transport.send(.response(to: message, type: "error", self.errorBody("calendar_unavailable", "warn", "Calendar could not be encoded")))
+            }
+        }
+    }
+
     private func answerPermissions(_ message: ControlMessage) {
         guard message.id != nil else { return }
+        if isLive, message.type == "permission.request", message.body["permission"] as? String == "calendar" {
+            calendar.request { [self] in
+                transport.send(.response(to: message, type: message.type, permissionStates()))
+            }
+            return
+        }
         if isLive, message.type == "permission.request" {
             // Prompting blocks until the user answers, so it must not stall the request loop's heartbeat.
             let permission = message.body["permission"] as? String
@@ -214,8 +254,9 @@ final class Agent {
 
     /// The test input touches no device and no TCC API, so there is nothing to ask the OS.
     private func permissionStates() -> [String: Any] {
-        if isLive { return ["microphone": Permissions.microphone().rawValue, "system_audio": Permissions.systemAudio().rawValue] }
-        return ["microphone": "granted", "system_audio": options.simulateSilentSystem ? "unknown" : "granted"]
+        if isLive { return ["microphone": Permissions.microphone().rawValue, "system_audio": Permissions.systemAudio().rawValue,
+                            "calendar": EventKitCalendar.permission().rawValue] }
+        return ["microphone": "granted", "system_audio": options.simulateSilentSystem ? "unknown" : "granted", "calendar": "granted"]
     }
 
     private func loadInput() throws -> TestInput {
@@ -231,6 +272,7 @@ final class Agent {
     // MARK: lifecycle
 
     private func shutDown() {
+        if isLive { calendar.close() }
         heartbeat?.cancel()
         _ = session?.stop()
         session = nil
@@ -260,7 +302,8 @@ final class Agent {
                 "capture": ["streams": ["mic", "system"], "aec": isLive && options.voiceProcessing, "device_events": isLive],
                 "stt": ["engine": transcriber.engine, "engine_version": "1.9.5", "partials": true,
                         "accel": "metal", "transcribe_file": true],
-                "permissions": ["microphone", "system_audio"],
+                "permissions": ["microphone", "system_audio", "calendar"],
+                "calendar": true,
                 "test_input": true,
             ] as [String: Any],
         ]

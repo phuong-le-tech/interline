@@ -15,4 +15,9 @@ do {
     exit(ExitCode.badArguments)
 }
 let transcriber = WhisperTranscriber()
-exit(options.bench ? Bench.run(options, transcriber: transcriber) : Agent(options: options, transcriber: transcriber).run())
+if options.bench { exit(Bench.run(options, transcriber: transcriber)) }
+// EventKit posts changes on the main queue; keep it running while stdio blocks on the worker.
+DispatchQueue.global(qos: .userInitiated).async {
+    exit(Agent(options: options, transcriber: transcriber).run())
+}
+dispatchMain()

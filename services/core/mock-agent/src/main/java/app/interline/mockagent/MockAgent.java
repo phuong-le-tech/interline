@@ -32,6 +32,13 @@ public final class MockAgent {
     private final MockOptions options;
     private final AgentConnection connection;
     private final Map<String, String> secrets = new ConcurrentHashMap<>();
+    private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
+    private final java.util.concurrent.ScheduledExecutorService calendarChanges =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task -> Thread.ofPlatform()
+                    .name("mock-calendar").daemon().unstarted(task));
+    private volatile JsonNode changedCalendar;
+    private boolean calendarStarted;
+    private boolean calendarDeniedSent;
     private Script script;
     private byte[][] pcm;
     private CaptureRun run;
@@ -72,6 +79,7 @@ public final class MockAgent {
             Inbound inbound = connection.receive();
             if (inbound instanceof Inbound.Closed) {
                 stopPlayback();
+                calendarChanges.shutdownNow();
                 return EXIT_OK;
             }
             if (inbound instanceof ControlMessage message && handle(message)) return EXIT_OK;
@@ -85,6 +93,7 @@ public final class MockAgent {
             case "session.stop" -> stopSession(message);
             case "permission.status", "permission.request" -> answerPermissions(message);
             case "transcribe.file" -> transcribeFile(message);
+            case "calendar.query" -> answerCalendar(message);
             case "secret.get", "secret.put", "secret.delete" -> answerSecret(message);
             case "audio.ack" -> {
                 CaptureRun current = run;
@@ -94,6 +103,7 @@ public final class MockAgent {
                 }
             }
             case "shutdown" -> {
+                calendarChanges.shutdownNow();
                 stopPlayback();
                 connection.send(ControlMessage.response(message.id(), "shutdown.ok", ControlMessage.nodes().objectNode()));
                 return true;
@@ -160,8 +170,89 @@ public final class MockAgent {
     private void answerPermissions(ControlMessage request) throws IOException {
         if (request.id() == null) return;
         ObjectNode body = ControlMessage.nodes().objectNode()
-                .put("microphone", "granted").put("system_audio", options.denySystemAudio() ? "denied" : "granted");
+                .put("microphone", "granted").put("system_audio", options.denySystemAudio() ? "denied" : "granted")
+                .put("calendar", options.denyCalendar() ? "denied" : "granted");
         connection.send(ControlMessage.response(request.id(), request.type(), body));
+    }
+
+    private boolean calendarSupported() {
+        if (options.denyCalendar()) return true;
+        if (options.script() == null) return false;
+        try { return json.readTree(options.script().toFile()).has("calendar"); }
+        catch (IOException e) { return false; }
+    }
+
+    private void answerCalendar(ControlMessage request) throws IOException {
+        JsonNode body = request.body();
+        if (request.id() == null) return;
+        if (!body.path("from_ms").isIntegralNumber() || !body.path("to_ms").isIntegralNumber()
+                || !body.path("from_ms").canConvertToLong() || !body.path("to_ms").canConvertToLong()
+                || body.path("to_ms").asLong() <= body.path("from_ms").asLong()
+                || (double) body.path("to_ms").asLong() - body.path("from_ms").asLong() > 31L * 86400000) {
+            connection.send(ControlMessage.response(request.id(), "error", error("invalid_request", "warn", "Invalid calendar window", null)));
+            return;
+        }
+        ObjectNode reply = ControlMessage.nodes().objectNode().put("complete", true);
+        var events = reply.putArray("events");
+        if (options.denyCalendar()) {
+            if (!calendarDeniedSent) {
+                calendarDeniedSent = true;
+                connection.send(ControlMessage.event("permission.denied", ControlMessage.nodes().objectNode()
+                        .put("permission", "calendar").put("detection", "tcc_denied")
+                        .put("settings_uri", "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")));
+            }
+        } else {
+            JsonNode calendar;
+            try {
+                calendar = changedCalendar != null ? changedCalendar : options.script() == null
+                        ? ControlMessage.nodes().objectNode() : json.readTree(options.script().toFile()).path("calendar");
+            } catch (IOException e) {
+                connection.send(ControlMessage.response(request.id(), "error", error("calendar_unavailable", "warn", "Cannot read scripted calendar", null)));
+                return;
+            }
+            for (JsonNode event : calendar.path("events")) {
+                long start = event.path("starts_at").asLong(), end = event.path("ends_at").asLong();
+                if (start < body.path("to_ms").asLong() && (end > body.path("from_ms").asLong()
+                        || start == end && start >= body.path("from_ms").asLong())) {
+                    events.add(event);
+                }
+            }
+            if (!calendar.path("complete").asBoolean(true)) reply.put("complete", false);
+            if (!calendarStarted) {
+                calendarStarted = true;
+                for (JsonNode change : calendar.path("changes")) {
+                    calendarChanges.schedule(() -> {
+                        changedCalendar = change;
+                        try { connection.send(ControlMessage.event("calendar.changed", ControlMessage.nodes().objectNode())); }
+                        catch (IOException ignored) { /* the core has gone away */ }
+                    }, Math.max(0, change.path("after_ms").asLong()), java.util.concurrent.TimeUnit.MILLISECONDS);
+                }
+            }
+        }
+        connection.send(calendarReply(request, reply));
+    }
+
+    private ControlMessage calendarReply(ControlMessage request, ObjectNode body) throws IOException {
+        boolean complete = body.path("complete").booleanValue();
+        var events = body.withArray("events");
+        var nearest = new java.util.ArrayList<JsonNode>();
+        events.forEach(nearest::add);
+        long now = System.currentTimeMillis();
+        nearest.sort(java.util.Comparator.comparingDouble(event -> Math.abs((double) event.path("starts_at").asLong() - now)));
+        events.removeAll();
+        // False is one byte longer than true, so this reserves the worst-case envelope size.
+        body.put("complete", false);
+        ControlMessage reply = ControlMessage.response(request.id(), "calendar.events", body);
+        int bytes = new app.interline.agent.FrameCodec().encodeControl(reply).length + 1;
+        for (JsonNode event : nearest) {
+            if (events.size() == 5000) { complete = false; break; }
+            int size = json.writeValueAsBytes(event).length + (events.isEmpty() ? 0 : 1);
+            if (bytes + size > app.interline.agent.FrameCodec.MAX_CONTROL_LENGTH) { complete = false; continue; }
+            events.add(event);
+            bytes += size;
+        }
+        body.put("complete", complete);
+        return reply;
     }
 
     /** Scripted import: the script regions of the requested stream that fit the file, else one final over all of it. */
@@ -251,7 +342,7 @@ public final class MockAgent {
         ObjectNode capture = capabilities.putObject("capture");
         capture.putArray("streams").add("mic").add("system");
         capture.put("aec", false).put("device_events", options.deviceChangeAtSample() >= 0);
-        capabilities.put("test_input", true);
+        capabilities.put("test_input", true).put("calendar", calendarSupported());
         capabilities.putObject("stt").put("engine", STT_ENGINE);
         return body;
     }

@@ -1,12 +1,10 @@
-import React from 'react';
-
-interface Props {
-  segmentId: number;
+interface Props<T> {
+  segmentId: T;
   label: string;
-  onSelect: (segmentId: number) => void;
+  onSelect: (segmentId: T) => void;
 }
 
-export const CitationChip: React.FC<Props> = ({ segmentId, label, onSelect }) => (
+export const CitationChip = <T extends string | number,>({ segmentId, label, onSelect }: Props<T>) => (
   <button
     type="button"
     className="citation-chip"
