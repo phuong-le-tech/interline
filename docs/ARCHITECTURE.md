@@ -480,9 +480,10 @@ CREATE TABLE calendar_events (id TEXT PRIMARY KEY,
   source TEXT NOT NULL CHECK (source IN ('agent','ics','manual')),   -- d2: was 'eventkit'
   external_id TEXT, title TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL,
   conference_url TEXT, attendees TEXT, synced_at INTEGER, UNIQUE (source, external_id));
-CREATE TABLE briefs (id TEXT PRIMARY KEY, calendar_event_id TEXT REFERENCES calendar_events(id) ON DELETE CASCADE,
-  meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE, content_md TEXT NOT NULL,
-  source_meeting_ids TEXT NOT NULL, ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
+-- V6, ADR-012: derived cache, JSON lines with related meeting citations; only returned when input_hash matches.
+CREATE TABLE briefs (id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL UNIQUE REFERENCES meetings(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, input_hash TEXT NOT NULL,
+  ai_run_id TEXT REFERENCES ai_runs(id) ON DELETE SET NULL, created_at INTEGER NOT NULL);
 CREATE TABLE providers (id TEXT PRIMARY KEY,           -- NO key here
   kind TEXT NOT NULL CHECK (kind IN ('openai_compatible','anthropic','ollama')),
   name TEXT NOT NULL, base_url TEXT NOT NULL, model TEXT NOT NULL,
@@ -497,6 +498,8 @@ CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='transcript_segments'
 -- + AFTER INSERT/UPDATE/DELETE triggers keeping both FTS indexes in sync; indexes as in draft 1.
 ```
 **V4 (M3) differences.** `V4__m3_calendar.sql` (Flyway location `db/migration-m3`) creates `calendar_events`, `people`, `meeting_participants` and adds `meetings.calendar_event_id`, plus an index on `calendar_events(starts_at)`. `people.email` is stored lower-cased. `calendar_events.attendees` is JSON text `[{"name":...,"email":...}]`; attendees without an email live only there. Sync replaces only the selected source (`ics` or `agent`) in the window; partial snapshots never delete absent rows; the subscription URL is not in the database (ADR-007).
+
+**V5 (M3 consent).** `V5__m3_consent.sql`, in the same Flyway location, adds nullable `meetings.consent_ack_at` (epoch milliseconds) and seeds `settings['consent.reminder_enabled']` as `true` without replacing an existing preference. Acknowledgement is idempotent and does not assert participant consent. The UI reads `GET /api/v1/settings/consent`, optionally saves `{reminder_enabled: false}` through `PUT`, and calls `POST /api/v1/meetings/{id}/consent-ack` before recording. Meeting responses expose `consentAckAt`, including null. Recording accepts an optional `meetingId`, opening a draft or appending a capture run using the existing resume protocol; omitting it still creates a new meeting. The core never gates capture on acknowledgement. A code rollback must retain the V5 migration resource and additive column and setting so Flyway validation can still succeed; no user data is removed. Deploy the migrated core before the new UI, which requires the consent endpoints.
 
 FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` (`MigrationTest` asserts it at M0). Search: FTS5 in v1, embeddings in v2 (`sqlite-vec` is a native extension: loading it through `sqlite-jdbc` per OS must be validated before v2).
 

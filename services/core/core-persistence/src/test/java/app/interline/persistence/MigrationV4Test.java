@@ -29,7 +29,7 @@ class MigrationV4Test {
     @BeforeEach
     void migrateFreshDatabase() {
         url = "jdbc:sqlite:" + directory.resolve("interline.db");
-        Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).load().migrate();
+        Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).target("4").load().migrate();
     }
 
     private Connection open() throws Exception {
@@ -198,7 +198,7 @@ class MigrationV4Test {
             templatesBefore = String.join(",", strings(c, "SELECT id || ':' || name FROM templates ORDER BY id"));
             assertThat(templatesBefore).isNotEmpty();
         }
-        Flyway.configure().dataSource(upgradeUrl, null, null).locations(LOCATIONS).load().migrate();
+        Flyway.configure().dataSource(upgradeUrl, null, null).locations(LOCATIONS).target("4").load().migrate();
         try (Connection c = DriverManager.getConnection(upgradeUrl)) {
             execute(c, "PRAGMA foreign_keys = ON");
             assertThat(strings(c, "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank"))
@@ -227,7 +227,7 @@ class MigrationV4Test {
 
     @Test
     void AC1_migrateIsIdempotentOnAnAlreadyUpgradedDatabase() throws Exception {
-        Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).load().migrate();
+        Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).target("4").load().migrate();
         try (Connection c = open()) {
             assertThat(strings(c, "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank"))
                     .containsExactly("1", "2", "3", "4");
