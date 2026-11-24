@@ -91,7 +91,10 @@ export type CalendarEvent = {
   attendees: { name?: string; email?: string }[];
 };
 
+export type AiBrief = { status: 'missing' | 'ok' | 'stale' | 'invalid_output' | 'error'; lines: { text: string; sources: string[] }[]; message?: string };
+
 export type Brief = {
+  ai?: AiBrief;
   meetingId: string;
   participants: { id: string; name: string; email: string | null }[];
   related: { meetingId: string; title: string; date: number; matchedBy: string; notes: string[] }[];
@@ -248,6 +251,10 @@ export class CoreClient {
 
   createMeeting(title: string): Promise<{ id: string }> {
     return this.json('/meetings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+  }
+
+  writeBrief(meetingId: string): Promise<AiBrief> {
+    return this.json(`/meetings/${encodeURIComponent(meetingId)}/brief/ai`, { method: 'POST' });
   }
 
   brief(meetingId: string): Promise<Brief> {

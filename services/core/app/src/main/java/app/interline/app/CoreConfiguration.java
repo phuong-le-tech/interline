@@ -3,6 +3,7 @@ package app.interline.app;
 import app.interline.agent.AgentPlatformCapabilities;
 import app.interline.ai.ConnectionTester;
 import app.interline.persistence.AiStore;
+import app.interline.persistence.BriefStore;
 import app.interline.persistence.CalendarStore;
 import app.interline.persistence.MeetingStore;
 import app.interline.persistence.CaptureStore;
@@ -47,12 +48,19 @@ class CoreConfiguration {
 
     @Bean CalendarStore calendarStore(DurableCaptureIngest ingest) { return new CalendarStore(ingest.database()); }
 
+    @Bean BriefStore briefStore(DurableCaptureIngest ingest) { return new BriefStore(ingest.database()); }
+
     @Bean MeetingStore meetingStore(DurableCaptureIngest ingest) { return new MeetingStore(ingest.database()); }
 
     @Bean SettingsStore settingsStore(DurableCaptureIngest ingest) { return new SettingsStore(ingest.database()); }
 
     @Bean MeetingService meetingService(MeetingStore meetings, CalendarStore calendar, Clock clock) {
         return new MeetingService(meetings, calendar, clock);
+    }
+
+    @Bean BriefService briefService(MeetingService meetings, BriefStore cache, AiStore ai,
+                                    ProviderService providers, Clock clock) {
+        return new BriefService(meetings, cache, ai, providers, clock);
     }
 
     @Bean CalendarService calendarService(CalendarStore store, AgentSecrets secrets, Clock clock, InterlineProperties properties) {

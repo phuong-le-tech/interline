@@ -19,13 +19,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Draft meetings, their participants and the brief (no AI, no network). */
+/** Draft meetings, their participants and the brief (generation only on explicit POST). */
 @RestController
 @RequestMapping("/api/v1")
 class MeetingsController {
     private final MeetingService meetings;
 
-    MeetingsController(MeetingService meetings) { this.meetings = meetings; }
+    private final BriefService briefs;
+
+    MeetingsController(MeetingService meetings, BriefService briefs) {
+        this.meetings = meetings;
+        this.briefs = briefs;
+    }
 
     @PostMapping("/meetings")
     ResponseEntity<Map<String, Object>> create(@RequestBody Map<String, Object> request) {
@@ -59,7 +64,13 @@ class MeetingsController {
         view.put("participants", brief.participants().stream().map(MeetingsController::person).toList());
         view.put("related", brief.related().stream().map(MeetingsController::related).toList());
         view.put("openActions", brief.openActions().stream().map(MeetingsController::action).toList());
+        view.put("ai", briefs.cached(brief));
         return view;
+    }
+
+    @PostMapping("/meetings/{id}/brief/ai")
+    BriefService.Outcome writeBrief(@PathVariable("id") String id) {
+        return briefs.write(id);
     }
 
     /** {@code email} is always present, null for a person known by name only. */
