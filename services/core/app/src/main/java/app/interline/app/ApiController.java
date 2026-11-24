@@ -1,6 +1,7 @@
 package app.interline.app;
 
 import app.interline.persistence.CaptureStore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.ErrorResponseException;
@@ -39,9 +40,10 @@ class ApiController {
 
     record StartedRecording(String meetingId) { }
 
-    record StartRequest(String language) { }
+    record StartRequest(String language, String meetingId) { }
 
-    record Meeting(String id, String title, String status, Long startedAt, Long endedAt) { }
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    record Meeting(String id, String title, String status, Long startedAt, Long endedAt, Long consentAckAt) { }
 
     record TranscriptLine(long id, String stream, String seg, String speaker, long startMs, long endMs, String text) { }
 
@@ -49,7 +51,7 @@ class ApiController {
     StartedRecording start(@RequestBody(required = false) StartRequest request) {
         String requested = request != null ? request.language() : null;
         String effective = requested != null ? requested : properties.stt().language();
-        return new StartedRecording(call(() -> recording.start(effective)));
+        return new StartedRecording(call(() -> recording.start(effective, request == null ? null : request.meetingId())));
     }
 
     @PostMapping("/recording/stop")
@@ -61,7 +63,7 @@ class ApiController {
     @GetMapping("/meetings")
     List<Meeting> meetings() {
         return ingest.store().listMeetings().stream()
-                .map(row -> new Meeting(row.id(), row.title(), row.status(), row.startedAt(), row.endedAt())).toList();
+                .map(row -> new Meeting(row.id(), row.title(), row.status(), row.startedAt(), row.endedAt(), row.consentAckAt())).toList();
     }
 
     @GetMapping("/meetings/{id}/transcript")

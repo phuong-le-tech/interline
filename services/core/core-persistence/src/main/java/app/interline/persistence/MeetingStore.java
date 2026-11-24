@@ -112,6 +112,13 @@ public final class MeetingStore {
                         nullableLong(rs.getObject(5)), rs.getLong(6))).optional());
     }
 
+    public boolean acknowledgeConsent(String meetingId, long nowMs) {
+        return database.write(db -> db.sql("UPDATE meetings SET consent_ack_at = COALESCE(consent_ack_at, ?), "
+                        + "updated_at = CASE WHEN consent_ack_at IS NULL THEN ? ELSE updated_at END "
+                        + "WHERE id = ? AND deleted_at IS NULL")
+                .params(nowMs, nowMs, meetingId).update() > 0);
+    }
+
     public Optional<String> findByCalendarEvent(String eventId) {
         return database.read(db -> db.sql("SELECT id FROM meetings WHERE calendar_event_id = ? AND deleted_at IS NULL "
                 + "ORDER BY created_at, rowid LIMIT 1").param(eventId).query(String.class).optional());

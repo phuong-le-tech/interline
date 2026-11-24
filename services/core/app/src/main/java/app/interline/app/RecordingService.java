@@ -135,6 +135,10 @@ public class RecordingService implements CaptureListener {
     }
 
     public synchronized String start(String language) {
+        return start(language, null);
+    }
+
+    public synchronized String start(String language, String meetingId) {
         if (capture == null || unavailableCode != null) {
             throw new RecordingException(503, "Capture is unavailable" + (unavailableCode == null ? "" : ": " + unavailableCode));
         }
@@ -147,10 +151,22 @@ public class RecordingService implements CaptureListener {
         if (needsSpeechModel() && models.speechModel().isEmpty()) {
             throw new RecordingException(409, MODEL_MISSING, "No speech model is installed: download one from the Models screen first");
         }
-        String id = UuidV7.next(clock.millis());
+        if (meetingId != null) {
+            var meeting = store.findMeeting(meetingId)
+                    .orElseThrow(() -> new RecordingException(404, "Unknown meeting"));
+            if (java.util.Set.of("recording", "degraded", "processing").contains(meeting.status())) {
+                throw new RecordingException(409, "The meeting is already recording or processing");
+            }
+        }
+        String id = meetingId == null ? UuidV7.next(clock.millis()) : meetingId;
+        int previousRuns = store.runCount(id);
         ingest.openMeeting(id);
         store.setLanguage(id, storedLanguage);
         active = new Meeting(id, storedLanguage);
+        active.sessionsStarted = previousRuns;
+        for (int run = 1; run <= previousRuns; run++) {
+            active.spoolDirs.add(spoolRoot.resolve(id).resolve("run-" + run).toString());
+        }
         if (agentConnected) sendSessionStart();
         return id;
     }
