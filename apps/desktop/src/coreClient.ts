@@ -141,7 +141,7 @@ export class CoreClient {
 
   private url(path: string): string {
     const allowed =
-        /^\/(recording\/(start|stop)|settings\/consent|meetings|meetings\/[A-Za-z0-9%-._~]+\/(consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+        /^\/(recording\/(start|stop)|settings\/consent|meetings|meetings\/[A-Za-z0-9%-._~]+\/(consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
     if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }

@@ -16,7 +16,7 @@ class MigrationV5Test {
     @TempDir Path directory;
 
     private Flyway flyway(String url) {
-        return Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).load();
+        return Flyway.configure().dataSource(url, null, null).locations(LOCATIONS).target("5").load();
     }
 
     @Test void freshDatabaseHasNullableAcknowledgementAndDefaultsReminderToTrue() throws Exception {

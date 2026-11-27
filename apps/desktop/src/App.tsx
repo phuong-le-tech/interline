@@ -17,6 +17,7 @@ import { PermissionBanner } from './PermissionBanner';
 import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
 import { Today } from './Today';
+import { Consent } from './Consent';
 import { trayState } from './trayState';
 
 const SLOW_START_MS = 1500;
