@@ -1,15 +1,21 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Retention } from './Retention';
 import { Trash } from './Trash';
 import { Privacy } from './Privacy';
 import { FileVaultNotice } from './FileVaultNotice';
 
+afterEach(cleanup);
+HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+HTMLDialogElement.prototype.close = function () { this.open = false; };
+
 describe('Privacy and data components', () => {
   it('loads and saves the labelled retention control', async () => {
     const save = vi.fn().mockResolvedValue({ audio_retention: '30d' });
     render(<Retention load={async () => ({ audio_retention: '7d' })} save={save} />);
-    await waitFor(() => expect(screen.getByLabelText('Audio retention')).toHaveValue('7d'));
+    await waitFor(() => expect(screen.getByLabelText('Audio retention')).toBeEnabled());
+    expect(screen.getByLabelText('Audio retention')).toHaveValue('7d');
     fireEvent.change(screen.getByLabelText('Audio retention'), { target: { value: '30d' } });
     await waitFor(() => expect(save).toHaveBeenCalledWith('30d'));
     expect(await screen.findByText('Audio retention saved.')).toHaveAttribute('role', 'status');
@@ -28,7 +34,7 @@ describe('Privacy and data components', () => {
     expect(erase).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toHaveTextContent('cannot be undone');
     expect(screen.getByRole('dialog')).toHaveTextContent('audio, transcript, notes');
-    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
     await waitFor(() => expect(erase).toHaveBeenCalledWith('a'));
   });
   it('shows actual outbound state and host', async () => {

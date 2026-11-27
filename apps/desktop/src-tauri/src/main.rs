@@ -2,6 +2,7 @@
 //! UI the endpoint it needs. All product logic lives in the core; this file stays small on purpose.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod filevault;
 mod supervisor;
 
 use std::sync::Mutex;
@@ -105,7 +106,7 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(CoreState(Mutex::new(Err("core is starting".to_string()))))
-        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings, notify, set_tray_state])
+        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings, notify, set_tray_state, filevault::filevault_status])
         .on_window_event(|window, event| {
             #[cfg(target_os = "macos")]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

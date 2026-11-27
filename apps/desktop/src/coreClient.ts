@@ -136,12 +136,16 @@ export async function waitForEndpoint(signal: AbortSignal): Promise<Endpoint | u
   return undefined;
 }
 
+export type AudioRetention = 'after_transcription' | '7d' | '30d' | 'forever';
+export type TrashedMeeting = { id: string; title: string; deletedAt: number; deletionStarted: boolean };
+export type PrivacyItem = { id: string; what: string; when: string; destinationHost: string | null; state: string };
+
 export class CoreClient {
   constructor(private readonly endpoint: Endpoint) {}
 
   private url(path: string): string {
     const allowed =
-        /^\/(recording\/(start|stop)|settings\/consent|meetings|meetings\/[A-Za-z0-9%-._~]+\/(consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+        /^\/(recording\/(start|stop)|settings\/(consent|retention)|privacy|trash(\/[A-Za-z0-9%._~-]+)?|meetings|meetings\/[A-Za-z0-9%._~-]+|meetings\/[A-Za-z0-9%-._~]+\/(restore|consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
     if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }
@@ -196,6 +200,16 @@ export class CoreClient {
   stopRecording(): Promise<unknown> {
     return this.json('/recording/stop', { method: 'POST' });
   }
+
+  retention(): Promise<{ audio_retention: AudioRetention }> { return this.json('/settings/retention'); }
+  setRetention(value: AudioRetention): Promise<unknown> {
+    return this.json('/settings/retention', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audio_retention: value }) });
+  }
+  trash(): Promise<TrashedMeeting[]> { return this.json('/trash'); }
+  deleteMeeting(id: string): Promise<void> { return this.empty(`/meetings/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  restoreMeeting(id: string): Promise<void> { return this.empty(`/meetings/${encodeURIComponent(id)}/restore`, { method: 'POST' }); }
+  eraseMeeting(id: string): Promise<void> { return this.empty(`/trash/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+  privacy(): Promise<PrivacyItem[]> { return this.json('/privacy'); }
 
   meetings(): Promise<Meeting[]> {
     return this.json('/meetings');

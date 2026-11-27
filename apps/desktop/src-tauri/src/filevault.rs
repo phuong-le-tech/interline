@@ -1,3 +1,26 @@
+fn parse_status(output: &str) -> &'static str {
+    match output.trim() {
+        "FileVault is On." => "on",
+        "FileVault is Off." => "off",
+        _ => "unknown",
+    }
+}
+
+#[tauri::command]
+pub async fn filevault_status() -> &'static str {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "macos")]
+        {
+            match std::process::Command::new("/usr/bin/fdesetup").arg("status").output() {
+                Ok(output) if output.status.success() => parse_status(&String::from_utf8_lossy(&output.stdout)),
+                _ => "unknown",
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        { parse_status("") }
+    }).await.unwrap_or("unknown")
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_status;
