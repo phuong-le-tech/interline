@@ -120,6 +120,7 @@ fn command(data_dir: &Path, log_dir: &Path, resources: &Path) -> Result<Command,
         std::env::var_os("JAVA_HOME").map_or("java".into(), |home| Path::new(&home).join("bin/java"))
     } else { core.join("runtime/bin/java") };
     let mut java = Command::new(executable);
+    sanitize_environment(&mut java);
     if !cfg!(debug_assertions) {
         java.current_dir(&core).args(["-XX:SharedArchiveFile=interline-core.jsa", "-Xss512k",
             "-XX:+UseSerialGC", "-Xmx256m", "-Djava.awt.headless=true", "-Dapple.awt.UIElement=true"])
@@ -137,6 +138,7 @@ fn command(data_dir: &Path, log_dir: &Path, resources: &Path) -> Result<Command,
         None => return Err("bundled capture agent is missing".into()),
     };
     // Development switch for agent flags such as `--voice-processing` (used by scripts/m1/human-gate.sh).
+    #[cfg(debug_assertions)]
     for flag in std::env::var("INTERLINE_AGENT_ARGS").unwrap_or_default().split_whitespace() {
         java.arg(format!("--agent-arg={flag}"));
     }
@@ -144,4 +146,38 @@ fn command(data_dir: &Path, log_dir: &Path, resources: &Path) -> Result<Command,
         .arg(format!("--allow-origin={DEV_ORIGIN}"))
         .arg(format!("--allow-origin={BUNDLE_ORIGIN}"));
     Ok(java)
+}
+
+fn sanitize_environment(command: &mut Command) {
+    let keys: Vec<_> = std::env::vars_os().map(|(key, _)| key)
+        .chain(command.get_envs().map(|(key, _)| key.to_owned())).collect();
+    for key in keys {
+        let name = key.to_string_lossy();
+        let development_override = !cfg!(debug_assertions)
+            && ["INTERLINE_DATA_DIR", "INTERLINE_LOG_DIR", "INTERLINE_AGENT_ARGS"].contains(&name.as_ref());
+        if development_override || name.starts_with("DYLD_")
+            || ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"].contains(&name.as_ref()) {
+            command.env_remove(key);
+        }
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    #[test]
+    fn core_environment_removes_injection_and_preserves_other_values() {
+        let mut command = Command::new("/usr/bin/env");
+        command.env_clear().env("SENTINEL", "kept");
+        let mut blocked = vec!["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"];
+        if !cfg!(debug_assertions) { blocked.extend(["INTERLINE_DATA_DIR", "INTERLINE_LOG_DIR", "INTERLINE_AGENT_ARGS"]); }
+        for key in &blocked { command.env(key, "blocked"); }
+        sanitize_environment(&mut command);
+        for key in &blocked {
+            assert!(!command.get_envs().any(|(name, value)| name == *key && value.is_some()));
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "SENTINEL=kept\n");
+    }
 }

@@ -113,6 +113,7 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         ProcessBuilder builder = new ProcessBuilder(config.command())
                 .redirectError(ProcessBuilder.Redirect.appendTo(config.logFile().toFile()));
         builder.redirectInput(ProcessBuilder.Redirect.PIPE);
+        sanitizeEnvironment(builder.environment());
         Process process = builder.start();
         try {
             if (processRegistry != null) processRegistry.agent(process);
@@ -121,6 +122,13 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
             ProcessTree.destroy(process);
             throw e;
         }
+    }
+
+    static void sanitizeEnvironment(Map<String, String> environment) {
+        environment.keySet().removeIf(name -> {
+            String key = name.toUpperCase(java.util.Locale.ROOT);
+            return key.startsWith("DYLD_") || java.util.Set.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS").contains(key);
+        });
     }
 
     private Process relaunch() {
