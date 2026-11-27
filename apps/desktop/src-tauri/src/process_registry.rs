@@ -1,5 +1,7 @@
 //! Match the core's portable pid/start-time/executable identities before orphan recovery.
 use serde::Deserialize;
+use std::io::Read;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -45,19 +47,38 @@ fn matches(saved: &Identity) -> bool {
     saved.pid > 1 && saved.start_time > 0 && identity(saved.pid).as_ref() == Some(saved)
 }
 
+fn signalable(saved: &Identity) -> bool {
+    saved.pid != std::process::id() as i32 && matches(saved)
+}
+
 pub fn recover(data: &Path) -> Result<(), String> {
-    let file = data.join("run/pids.json");
-    let bytes = match std::fs::read(file) {
-        Ok(bytes) => bytes,
+    let run = data.join("run");
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&run).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    let path = run.join("pids.json");
+    let mut file = match std::fs::File::open(&path) {
+        Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(format!("cannot read process registry: {e}")),
     };
-    let saved: Snapshot = serde_json::from_slice(&bytes).map_err(|e| format!("invalid process registry: {e}"))?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    if file.metadata().map_err(|e| e.to_string())?.len() <= 65536 {
+        (&mut file).take(65536).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    }
+    let saved = serde_json::from_slice::<Snapshot>(&bytes).ok().filter(|saved| {
+        [Some(&saved.core), saved.owner.as_ref(), saved.agent.as_ref()].into_iter().flatten()
+            .all(|id| id.pid > 0 && id.start_time > 0 && id.executable.is_absolute())
+    });
+    let Some(saved) = saved.filter(|_| file.metadata().is_ok_and(|m| m.len() <= 65536)) else {
+        std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        return Ok(());
+    };
     if saved.owner.as_ref().is_some_and(matches) && matches(&saved.core) {
         return Err("Interline is already running for this data directory".into());
     }
     for process in [Some(saved.core), saved.agent].into_iter().flatten() {
-        if matches(&process) {
+        if signalable(&process) {
             // SAFETY: only the identity just matched in the kernel is signalled, never a process group.
             if unsafe { libc::kill(process.pid, libc::SIGKILL) } != 0 {
                 return Err(format!("cannot stop leftover process {}", process.pid));
