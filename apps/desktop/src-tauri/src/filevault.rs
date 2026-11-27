@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", test))]
 fn parse_status(output: &str) -> &'static str {
     match output.trim() {
         "FileVault is On." => "on",
@@ -6,18 +7,28 @@ fn parse_status(output: &str) -> &'static str {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn command_status(command: &mut std::process::Command, timeout: std::time::Duration) -> &'static str {
+    use std::{process::Stdio, time::{Duration, Instant}};
+    let Ok(mut child) = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return "unknown"; };
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok().filter(|out| out.status.success())
+                .map(|out| parse_status(&String::from_utf8_lossy(&out.stdout))).unwrap_or("unknown"),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => { let _ = child.kill(); let _ = child.wait(); return "unknown"; }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn filevault_status() -> &'static str {
     tauri::async_runtime::spawn_blocking(|| {
         #[cfg(target_os = "macos")]
-        {
-            match std::process::Command::new("/usr/bin/fdesetup").arg("status").output() {
-                Ok(output) if output.status.success() => parse_status(&String::from_utf8_lossy(&output.stdout)),
-                _ => "unknown",
-            }
-        }
+        { command_status(std::process::Command::new("/usr/bin/fdesetup").arg("status"), std::time::Duration::from_secs(2)) }
         #[cfg(not(target_os = "macos"))]
-        { parse_status("") }
+        { "unknown" }
     }).await.unwrap_or("unknown")
 }
 

@@ -28,7 +28,10 @@ class LifecycleController {
     }
     @DeleteMapping("/meetings/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     void trash(@PathVariable("id") String id) {
-        if (!lifecycle.trash(id,clock.millis())) throw ApiProblems.of(HttpStatus.CONFLICT,"meeting_not_deletable","Meeting is missing, recording or processing");
+        if (!lifecycle.trash(id,clock.millis())) {
+            if (!lifecycle.containsMeeting(id)) throw ApiProblems.notFound("meeting");
+            throw ApiProblems.of(HttpStatus.CONFLICT,"meeting_not_deletable","Meeting is recording or processing");
+        }
     }
     @GetMapping("/trash") List<LifecycleStore.Trashed> trash() { return lifecycle.trash(); }
     @PostMapping("/meetings/{id}/restore") @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -36,5 +39,5 @@ class LifecycleController {
         if (!lifecycle.restore(id,clock.millis())) throw ApiProblems.of(HttpStatus.CONFLICT,"meeting_not_restorable","Meeting is missing or permanent deletion has started");
     }
     @DeleteMapping("/trash/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
-    void erase(@PathVariable("id") String id) { lifecycle.hardDelete(id); }
+    void erase(@PathVariable("id") String id) { if (!lifecycle.hardDelete(id)) throw ApiProblems.notFound("trashed meeting"); }
 }

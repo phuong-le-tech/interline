@@ -13,34 +13,42 @@ class LifecycleStoreTest {
     @TempDir Path data;
     static final long DAY = 86_400_000L;
 
-    @Test void retentionIsPinnedAtEndAndOnlyAudioIsPurged() throws Exception {
-        try (var db = SqliteDatabase.open(data.resolve("db"))) {
-            var settings = new SettingsStore(db);
-            var capture = new CaptureStore(db);
-            var audio = new AudioStore(data.resolve("audio"));
-            var lifecycle = new LifecycleStore(db, data);
-            assertThat(settings.audioRetention()).isEqualTo("7d");
-            for (String value : new String[]{"after_transcription", "7d", "30d", "forever"}) {
-                settings.setAudioRetention(value, 0);
-                capture.createMeeting(value, 0);
-                audio.write(value, StreamKind.MIC, 0, new byte[2], new HashSet<>());
-                capture.insertFinal(value, StreamKind.MIC, "s", 0, 16, "original transcript", "test", null);
-                db.write(c -> c.sql("INSERT INTO note_blocks(id,meeting_id,position,kind,origin,content,plain_text,created_at,updated_at) VALUES (?,?,'a','paragraph','user','original notes','original notes',0,0)").params(value,value).update());
-                capture.setStatus(value, MeetingStatus.DONE, DAY);
+    @Test void everyRetentionPolicyPurgesOnlyDueAudioAndPreservesText() throws Exception {
+        for (String value : new String[]{"after_transcription", "7d", "30d", "forever"}) {
+            Path root = data.resolve(value);
+            try (var db = SqliteDatabase.open(root.resolve("db"))) {
+                var settings = new SettingsStore(db);
+                var capture = new CaptureStore(db);
+                var audio = new AudioStore(root.resolve("audio"));
+                var lifecycle = new LifecycleStore(db,root);
+                assertThat(settings.audioRetention()).isEqualTo("7d");
+                settings.setAudioRetention(value,0);
+                capture.createMeeting("due",0);
+                audio.write("due",StreamKind.MIC,0,new byte[2],new HashSet<>());
+                capture.insertFinal("due",StreamKind.MIC,"s",0,16,"original transcript","test",null);
+                db.write(c -> c.sql("INSERT INTO note_blocks(id,meeting_id,position,kind,origin,content,plain_text,created_at,updated_at) VALUES ('note','due','a','paragraph','user','original notes','original notes',0,0)").update());
+                capture.setStatus("due",MeetingStatus.DONE,DAY);
+                capture.createMeeting("future",0);
+                audio.write("future",StreamKind.MIC,0,new byte[2],new HashSet<>());
+                capture.setStatus("future",MeetingStatus.DONE,1000 * DAY);
+                if (value.equals("forever")) {
+                    assertThat(deadline(db,"due")).isNull();
+                    lifecycle.purgeAudio(365 * DAY);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isTrue();
+                } else {
+                    long due = switch (value) { case "after_transcription" -> DAY; case "7d" -> 8 * DAY; default -> 31 * DAY; };
+                    assertThat(deadline(db,"due")).isEqualTo(due);
+                    lifecycle.purgeAudio(due - 1);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isTrue();
+                    lifecycle.purgeAudio(due);
+                    lifecycle.purgeAudio(due);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isFalse();
+                }
+                assertThat(Files.exists(root.resolve("audio/future"))).isTrue();
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM transcript_segments WHERE text='original transcript'").query(Integer.class).single())).isEqualTo(1);
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM note_blocks WHERE plain_text='original notes'").query(Integer.class).single())).isEqualTo(1);
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM meetings WHERE audio_dir IS NOT NULL").query(Integer.class).single())).isEqualTo(value.equals("forever") ? 2 : 1);
             }
-            lifecycle.purgeAudio(DAY);
-            assertThat(Files.exists(data.resolve("audio/after_transcription"))).isFalse();
-            assertThat(Files.exists(data.resolve("audio/7d"))).isTrue();
-            lifecycle.purgeAudio(8 * DAY);
-            lifecycle.purgeAudio(8 * DAY);
-            assertThat(Files.exists(data.resolve("audio/7d"))).isFalse();
-            assertThat(Files.exists(data.resolve("audio/30d"))).isTrue();
-            lifecycle.purgeAudio(31 * DAY);
-            assertThat(Files.exists(data.resolve("audio/30d"))).isFalse();
-            assertThat(Files.exists(data.resolve("audio/forever"))).isTrue();
-            assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM transcript_segments").query(Integer.class).single())).isEqualTo(4);
-            assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM note_blocks WHERE plain_text = 'original notes'").query(Integer.class).single())).isEqualTo(4);
-            assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM meetings WHERE audio_dir IS NOT NULL").query(Integer.class).single())).isEqualTo(1);
         }
     }
 
@@ -197,7 +205,7 @@ class LifecycleStoreTest {
     private static Long deadline(SqliteDatabase db,String id) {
         return db.read(c -> c.sql("SELECT audio_purge_at FROM meetings WHERE id=?").param(id).query((rs,n) -> {
             Object value = rs.getObject(1); return value == null ? null : ((Number)value).longValue();
-        }).single());
+        }).list().get(0));
     }
 
     @Test void hardAndScheduledTrashDeletionNeverHoldTheDatabaseMonitorWhileDeletingFiles() {

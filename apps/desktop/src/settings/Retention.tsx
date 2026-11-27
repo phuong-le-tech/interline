@@ -29,7 +29,7 @@ export function Retention({ load, save }: {
       <option value="30d">30 days after the meeting</option>
       <option value="forever">Keep forever</option>
     </select></label>
-    <p>Applies when a meeting next ends. Notes and transcripts stay until you delete the meeting.</p>
+    <p>Audio from before this upgrade is kept without an automatic deletion deadline. Retention applies when a meeting next ends. Changes can extend scheduled deadlines or cancel them with Keep forever, but never shorten them. Notes and transcripts stay until you delete the meeting.</p>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
   </section>;
 }

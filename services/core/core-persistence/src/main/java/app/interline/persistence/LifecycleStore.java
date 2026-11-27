@@ -3,19 +3,27 @@ package app.interline.persistence;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Lifecycle SQL and file removal share the database lock with capture. Files are removed before row commit. */
+/** Durable deletion intent protects trashed meetings while their files are removed outside the capture lock. */
 public final class LifecycleStore {
     private final SqliteDatabase database;
-    private final AudioStore audio;
-    private final AudioStore spool;
-    private final AudioStore recovery;
+    private final java.util.function.Consumer<String> deleteFiles;
     public record Trashed(String id, String title, long deletedAt, boolean deletionStarted) { }
 
     public LifecycleStore(SqliteDatabase database, Path data) {
+        this(database, id -> {
+            new AudioStore(data.resolve("audio")).deleteMeeting(id);
+            new AudioStore(data.resolve("spool")).deleteMeeting(id);
+            new AudioStore(data.resolve("recovery")).deleteMeeting(id);
+        });
+    }
+
+    LifecycleStore(SqliteDatabase database, java.util.function.Consumer<String> deleteFiles) {
         this.database = database;
-        this.audio = new AudioStore(data.resolve("audio"));
-        this.spool = new AudioStore(data.resolve("spool"));
-        this.recovery = new AudioStore(data.resolve("recovery"));
+        this.deleteFiles = deleteFiles;
+    }
+
+    public boolean containsMeeting(String id) {
+        return database.read(db -> db.sql("SELECT count(*) FROM meetings WHERE id = ?").param(id).query(Integer.class).single() > 0);
     }
 
     public boolean trash(String id, long now) {
@@ -34,20 +42,18 @@ public final class LifecycleStore {
                 + "AND deleted_at IS NOT NULL AND deletion_started_at IS NULL").params(now,id).update() > 0);
     }
 
-    public void hardDelete(String id) {
-        // Commit intent first: a crash or a failed file removal must never allow a partial meeting to be restored.
-        database.write(db -> db.sql("UPDATE meetings SET deletion_started_at = COALESCE(deletion_started_at, deleted_at) "
-                + "WHERE id = ? AND deleted_at IS NOT NULL").param(id).update());
-        database.write(db -> {
-            boolean exists = db.sql("SELECT count(*) FROM meetings WHERE id = ? AND deleted_at IS NOT NULL AND deletion_started_at IS NOT NULL")
-                    .param(id).query(Integer.class).single() > 0;
-            if (!exists) return null;
-            audio.deleteMeeting(id);
-            spool.deleteMeeting(id);
-            recovery.deleteMeeting(id);
-            db.sql("DELETE FROM meetings WHERE id = ?").param(id).update();
-            return null;
-        });
+    public synchronized boolean hardDelete(String id) { return delete(id, null); }
+
+    private synchronized boolean delete(String id, Long trashedBefore) {
+        // Commit intent first: neither restore nor a late agent reply may revive a partial deletion.
+        boolean claimed = database.write(db -> db.sql("UPDATE meetings SET deletion_started_at = COALESCE(deletion_started_at, deleted_at) "
+                + "WHERE id = ? AND deleted_at IS NOT NULL AND (? IS NULL OR deletion_started_at IS NOT NULL OR deleted_at < ?)")
+                .params(id,trashedBefore,trashedBefore).update() > 0);
+        if (!claimed) return false;
+        deleteFiles.accept(id);
+        database.write(db -> db.sql("DELETE FROM meetings WHERE id = ? AND deleted_at IS NOT NULL AND deletion_started_at IS NOT NULL")
+                .param(id).update());
+        return true;
     }
 
     public void purgeAudio(long now) {
@@ -63,9 +69,7 @@ public final class LifecycleStore {
                         + "AND status NOT IN ('recording','degraded','processing') "
                         + "AND NOT EXISTS (SELECT 1 FROM recovery_jobs WHERE meeting_id = meetings.id AND done = 0)").params(id,now).query(Integer.class).single() > 0;
                 if (!stillDue) return null;
-                audio.deleteMeeting(id);
-                spool.deleteMeeting(id);
-                recovery.deleteMeeting(id);
+                deleteFiles.accept(id);
                 return db.sql("UPDATE meetings SET audio_dir = NULL, audio_purge_at = NULL WHERE id = ?").param(id).update();
             }); } catch (RuntimeException e) { failure = e; }
         }
@@ -73,16 +77,14 @@ public final class LifecycleStore {
     }
 
     public void purgeTrash(long now) {
-        database.read(db -> {
-            RuntimeException failure = null;
-            for (Trashed meeting : trash()) {
-                if (meeting.deletionStarted() || meeting.deletedAt() < now - 30 * 86_400_000L) {
-                    try { hardDelete(meeting.id()); }
-                    catch (RuntimeException e) { failure = e; }
-                }
+        RuntimeException failure = null;
+        long cutoff = now - 30 * 86_400_000L;
+        for (Trashed meeting : trash()) {
+            if (meeting.deletionStarted() || meeting.deletedAt() < cutoff) {
+                try { delete(meeting.id(),cutoff); }
+                catch (RuntimeException e) { failure = e; }
             }
-            if (failure != null) throw failure;
-            return null;
-        });
+        }
+        if (failure != null) throw failure;
     }
 }

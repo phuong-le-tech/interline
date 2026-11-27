@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import stylesheet from '../styles.css?raw';
+import { readFileSync } from 'node:fs';
+const stylesheet = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 import { Retention } from './Retention';
 import { Trash } from './Trash';
 import { Privacy } from './Privacy';
