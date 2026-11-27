@@ -7,7 +7,7 @@ v1 ships on macOS only. The architecture is portable from day one: Windows and L
 ## 1. Constraints that shape everything
 
 1. **No OS API leaks into the core.** The Spring Boot core is one jar that runs unchanged on macOS, Windows and Linux. Everything OS-specific lives in the capture agent (native, one per OS) or in Tauri (already cross-platform).
-2. **The shell is dumb.** Tauri owns windows, the webview, the tray and process supervision. No business logic, no audio, no SQL, no network in Rust. Budget: 200 to 400 lines of Rust.
+2. **The shell is dumb.** Tauri owns windows, the webview, the tray and process supervision. No business logic, no audio, no SQL, no network in Rust. Budget: 200 to 400 lines of Rust. M4 exception: the cap is 550 (measured 500 on the packaging branch) because process recovery and security guards exceed the original 400 [to review in M5].
 3. **Local-first, zero implicit network.** Unchanged from draft 1: audio never leaves the machine, LLM calls only to the provider the user configured.
 4. **Never lose notes, never lose more than ~2 s of audio.** Notes never transit through the agent. Audio is spooled to disk by the agent before it is sent, and acknowledged by the core only once durable.
 5. **The whole pipeline must run in CI on a Linux runner with no audio device**, through a `MockAgent` that replays a WAV fixture.
@@ -517,11 +517,12 @@ FTS5 is verified as compiled into the SQLite shipped by `sqlite-jdbc` (`Migratio
 | Tauri shell + UI bundle | each OS runner | Yes (shell code identical) |
 
 ### 14.2 jlink runtime
-- Start set of modules, to be confirmed by `jdeps --print-module-deps --ignore-missing-deps` on the final jar [to verify]: `java.base, java.sql, java.naming, java.desktop (java.beans, required by Spring), java.management, java.logging, java.xml, java.net.http, jdk.unsupported, jdk.crypto.ec (TLS to LLM providers), jdk.zipfs`.
-- Flags: `--strip-debug --no-header-files --no-man-pages --compress=zip-6` [to verify flag syntax on JDK 21]. Expected size 45 to 60 MB [estimate].
+- Local Apple Silicon module roots confirmed with `jdeps` and startup tests on JDK 21.0.10 (2026-11-27): `java.base, java.sql, java.naming, java.desktop, java.management, java.logging, java.xml, java.net.http, java.security.jgss, java.instrument, jdk.unsupported, jdk.crypto.ec, jdk.zipfs`. Tomcat needs `java.security.jgss` and `java.instrument` in addition to the initial proposed set. The executable-jar and expanded nested-dependency analysis outputs are recorded in `PACKAGING.md`.
+- Provenance: direct-jar `jdeps` found `java.base,java.management,java.net.http`; recursive analysis of nested dependencies also found `java.desktop,java.instrument,java.security.jgss,jdk.unsupported` among optional roots. Startup failures confirmed that `java.instrument` and `java.security.jgss` must be restored to the reduced image; they were not invisible to expanded `jdeps`. JDBC/naming/logging/XML support follows runtime needs and module closure; EC crypto and ZipFS were retained explicitly from the architecture list. Optional compiler, scripting, rowset, JFR and management-tooling roots from expanded analysis were excluded and the resulting image was started successfully.
+- Flags verified on JDK 21.0.10: `--strip-debug --no-header-files --no-man-pages --compress=zip-6`. Local assembled runtime including its base CDS archive: 63,440 KiB (64.96 MB), measured on Apple M4, 2026-11-27.
 - **jpackage is not used to build installers**: Tauri's bundler already produces DMG, MSI and AppImage/deb, and a jpackage `.app` nested inside the Tauri `.app` doubles the signing surface. jpackage stays an option only for a native-named launcher on Windows (`interline-core.exe` instead of `java.exe` in Task Manager) [decision M4]. Default launcher everywhere: `runtime/bin/java`.
 - JVM options: `-XX:SharedArchiveFile=interline-core.jsa -Xss512k -XX:+UseSerialGC -Xmx256m -Djava.awt.headless=true -Dapple.awt.UIElement=true -Dorg.sqlite.lib.path=<res>/core/native` (the last two: no Dock icon, and load the separately signed SQLite library on macOS).
-- Startup: Spring Boot CDS training run (`-XX:ArchiveClassesAtExit` with `spring.context.exit=onRefresh`) [to verify for Boot 4.1], lazy initialisation for the LLM and MCP beans, no classpath scanning outside `app.interline`. Project Leyden AOT cache would help more but needs Java 24+ (ADR-001 exit/upgrade conditions).
+- Startup: Spring Boot CDS training run (`-XX:ArchiveClassesAtExit` with `spring.context.exit=onRefresh`), verified for Boot 4.1.2 with the executable jar and an stdin test token on 2026-11-27; 2,489 Spring classes loaded from the trained archive after assembly. Lazy initialisation for the LLM and MCP beans, no classpath scanning outside `app.interline`. Project Leyden AOT cache would help more but needs Java 24+ (ADR-001 exit/upgrade conditions).
 
 ### 14.3 Bundle layout (macOS)
 ```
@@ -579,6 +580,8 @@ Structure from M0, even if empty: `release.yml` has `macos`, `windows`, `linux` 
 | RAM while recording | idle + model | `large-v3-turbo-q5_0`: about +1 GB in the agent [to verify on M1] |
 | Live transcript latency | median < 5 s | M1 8 GB with `small` |
 | Clean quit | <= 8 s, zero leftover process | smoke test |
+
+M4-A local measurements (Apple M4, 32 GiB, macOS 27.2.1, 2026-11-27): installed app 308.26 MB, DMG 215.22 MB, attributed total idle RSS 551.11 MB; these three budgets fail. Window visible 0.254-0.370 s, core-only READY with CDS 1.302 s (fresh process/database, warm filesystem cache), agent hello 0.0124 s, clean quit 0.716 s and shell-SIGKILL cleanup 0.604 s. Methods, per-process RSS and unverified M1/real-model measurements: [PACKAGING.md](PACKAGING.md).
 
 ## 15. Target repository tree
 

@@ -37,6 +37,9 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
     public record Config(List<String> command, Path logFile, Duration heartbeatInterval, String coreVersion) { }
 
     private static final System.Logger LOG = System.getLogger(AgentPlatformCapabilities.class.getName());
+    private ProcessRegistry processRegistry;
+
+    public void trackProcesses(ProcessRegistry registry) { this.processRegistry = registry; }
     private static final int PROTOCOL = 1;
     private static final int WINDOW_FRAMES = 50;
     private static final java.util.Set<String> DISPLAY_ONLY = java.util.Set.of("level", "stt.partial", "heartbeat");
@@ -110,7 +113,22 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
         ProcessBuilder builder = new ProcessBuilder(config.command())
                 .redirectError(ProcessBuilder.Redirect.appendTo(config.logFile().toFile()));
         builder.redirectInput(ProcessBuilder.Redirect.PIPE);
-        return builder.start();
+        sanitizeEnvironment(builder.environment());
+        Process process = builder.start();
+        try {
+            if (processRegistry != null) processRegistry.agent(process);
+            return process;
+        } catch (IOException e) {
+            ProcessTree.destroy(process);
+            throw e;
+        }
+    }
+
+    static void sanitizeEnvironment(Map<String, String> environment) {
+        environment.keySet().removeIf(name -> {
+            String key = name.toUpperCase(java.util.Locale.ROOT);
+            return key.startsWith("DYLD_") || java.util.Set.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS").contains(key);
+        });
     }
 
     private Process relaunch() {
