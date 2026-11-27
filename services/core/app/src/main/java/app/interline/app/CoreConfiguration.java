@@ -54,6 +54,15 @@ class CoreConfiguration {
 
     @Bean SettingsStore settingsStore(DurableCaptureIngest ingest) { return new SettingsStore(ingest.database()); }
 
+    @Bean app.interline.persistence.LifecycleStore lifecycleStore(DurableCaptureIngest ingest, InterlineProperties properties) {
+        return new app.interline.persistence.LifecycleStore(ingest.database(), properties.dataDir());
+    }
+
+    @Bean(initMethod = "start", destroyMethod = "close")
+    LifecyclePurger lifecyclePurger(app.interline.persistence.LifecycleStore store, Clock clock, OrphanRecovery recovery) {
+        return new LifecyclePurger(store, clock);
+    }
+
     @Bean MeetingService meetingService(MeetingStore meetings, CalendarStore calendar, Clock clock) {
         return new MeetingService(meetings, calendar, clock);
     }

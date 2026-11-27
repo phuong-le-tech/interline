@@ -19,8 +19,29 @@ public final class AudioStore {
 
     public AudioStore(Path root) { this.root = root; }
 
+    private Path meetingDirectory(String meetingId) {
+        if (!meetingId.matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("unsafe meeting id");
+        Path directory = root.toAbsolutePath().normalize().resolve(meetingId);
+        if (Files.isSymbolicLink(root) || Files.isSymbolicLink(directory))
+            throw new IllegalStateException("audio directory must not be a symbolic link");
+        return directory;
+    }
+
     public Path directory(String meetingId, StreamKind stream) {
-        return root.resolve(meetingId).resolve(stream.wireName());
+        Path directory = meetingDirectory(meetingId).resolve(stream.wireName());
+        if (Files.isSymbolicLink(directory)) throw new IllegalStateException("audio stream must not be a symbolic link");
+        return directory;
+    }
+
+    /** Never follow links or a stored path: a meeting owns only its canonical directory under this root. */
+    public void deleteMeeting(String meetingId) {
+        Path directory = meetingDirectory(meetingId);
+        if (!Files.exists(directory)) return;
+        try (var paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot remove meeting audio", e);
+        }
     }
 
     /** Write at the position implied by {@code firstSample}, so replaying a frame rewrites the same bytes. */

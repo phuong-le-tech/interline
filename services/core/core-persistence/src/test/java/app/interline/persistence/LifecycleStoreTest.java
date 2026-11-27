@@ -132,4 +132,21 @@ class LifecycleStoreTest {
             assertThat(lifecycle.trash()).extracting(LifecycleStore.Trashed::id).doesNotContain("a");
         }
     }
+    @Test void oneFailedAudioRemovalDoesNotPreventOtherDueMeetingsFromPurging() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            for (String id : new String[]{"a","b"}) {
+                capture.createMeeting(id,0);
+                capture.setStatus(id,MeetingStatus.DONE,1);
+            }
+            Files.createDirectories(data.resolve("audio/b"));
+            Files.writeString(data.resolve("audio/b/part.pcm"),"test");
+            Files.createSymbolicLink(data.resolve("audio/a"),data.resolve("audio/b"));
+            assertThatThrownBy(() -> lifecycle.purgeAudio(8 * DAY)).isInstanceOf(RuntimeException.class);
+            assertThat(Files.exists(data.resolve("audio/b/part.pcm"))).isFalse();
+            assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM meetings WHERE id='a' AND audio_dir IS NOT NULL").query(Integer.class).single())).isEqualTo(1);
+        }
+    }
+
 }
