@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../.." && pwd)
+app=${1:-"$root/apps/desktop/src-tauri/target/release/bundle/macos/Interline.app"}
+for item in MacOS/interline MacOS/interline-capture Resources/core/runtime/bin/java Resources/core/runtime/lib/jspawnhelper Resources/core/interline-core.jar Resources/core/interline-core.jsa Resources/core/native/libsqlitejdbc.dylib Resources/ui/index.html; do
+  test -f "$app/Contents/$item" || { echo "Missing bundle file: $item" >&2; exit 1; }
+done
+test -d "$app/Contents/MacOS/whisper.framework"
+test "$(find "$app/Contents/Resources/core" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 4
+test "$(find "$app/Contents/MacOS" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 3
+for key in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription NSCalendarsFullAccessUsageDescription; do
+  expected=$(/usr/libexec/PlistBuddy -c "Print :$key" "$root/apps/desktop/src-tauri/Info.plist")
+  test "$(/usr/libexec/PlistBuddy -c "Print :$key" "$app/Contents/Info.plist")" = "$expected"
+  test "$(/usr/libexec/PlistBuddy -c "Print :$key" "$root/agents/macos-capture/Resources/Info.plist")" = "$expected"
+  grep -aF "$expected" "$app/Contents/MacOS/interline-capture" >/dev/null
+done
+cmp "$root/services/core/app/target/interline-core.jar" "$app/Contents/Resources/core/interline-core.jar"
+test -x "$app/Contents/MacOS/interline-capture"
+test -x "$app/Contents/Resources/core/runtime/bin/java"
+codesign --verify --deep --strict "$app"
+echo "Bundle layout, jar identity and local signature: PASS"

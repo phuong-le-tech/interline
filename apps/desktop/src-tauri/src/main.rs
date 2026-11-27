@@ -4,6 +4,7 @@
 
 mod filevault;
 mod supervisor;
+mod process_registry;
 
 use std::sync::Mutex;
 use std::process::Command;
@@ -121,8 +122,12 @@ fn main() {
             setup_tray(app)?;
             let data_dir = app.path().app_data_dir()?;
             let log_dir = app.path().app_log_dir()?;
+            #[cfg(debug_assertions)]
+            let data_dir = std::env::var_os("INTERLINE_DATA_DIR").map(std::path::PathBuf::from).unwrap_or(data_dir);
+            #[cfg(debug_assertions)]
+            let log_dir = std::env::var_os("INTERLINE_LOG_DIR").map(std::path::PathBuf::from).unwrap_or(log_dir);
             // Spawning only forks the child; READY is awaited on a reader thread, so the window is not blocked.
-            let core = Core::spawn(&data_dir, &log_dir);
+            let core = Core::spawn(&data_dir, &log_dir, &app.path().resource_dir()?);
             *app.state::<CoreState>().0.lock().unwrap() = core;
             Ok(())
         })

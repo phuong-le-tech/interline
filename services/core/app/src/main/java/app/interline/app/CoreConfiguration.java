@@ -1,6 +1,7 @@
 package app.interline.app;
 
 import app.interline.agent.AgentPlatformCapabilities;
+import app.interline.agent.ProcessRegistry;
 import app.interline.ai.ConnectionTester;
 import app.interline.persistence.AiStore;
 import app.interline.persistence.BriefStore;
@@ -94,8 +95,14 @@ class CoreConfiguration {
     }
 
     @Bean(destroyMethod = "close")
-    DurableCaptureIngest ingest(InterlineProperties properties) {
+    DurableCaptureIngest ingest(InterlineProperties properties, @org.jspecify.annotations.Nullable ProcessRegistry registry) {
+        // The registry dependency acquires process ownership before the database is opened.
         return new DurableCaptureIngest(properties.dataDir());
+    }
+
+    @Bean(destroyMethod = "close")
+    @org.jspecify.annotations.Nullable ProcessRegistry processRegistry(InterlineProperties properties) throws java.io.IOException {
+        return properties.parentIsStdio() ? new ProcessRegistry(properties.dataDir()) : null;
     }
 
     /** Repairs meetings left recording by a crash before anything can start a new one. */
@@ -125,7 +132,8 @@ class CoreConfiguration {
 
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
-                                          String coreVersion, ModelService models, AgentSecrets secrets, CalendarService calendar, EventBus events) {
+                                          String coreVersion, ModelService models, AgentSecrets secrets, CalendarService calendar, EventBus events,
+                                          @org.jspecify.annotations.Nullable ProcessRegistry registry) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -143,6 +151,7 @@ class CoreConfiguration {
                 secrets.bind(capture.secrets());
                 calendar.bind(capture, events);
                 recording.bind(capture);
+                capture.trackProcesses(registry);
                 capture.start();
             }
 
