@@ -124,7 +124,7 @@ public final class CaptureStore {
                 .param(meetingId).query(Long.class).single());
     }
 
-    /** Store a final segment once per (meeting, stream, seg). Returns false for a duplicate delivery. */
+    /** Store a final segment once per (meeting, stream, seg). Returns false for a duplicate delivery or after permanent deletion starts. */
     public boolean insertFinal(String meetingId, StreamKind stream, String seg, long startSample, long endSample,
                                String text, String model, Double avgLogprob) {
         return insertFinal(meetingId, stream, seg, startSample, endSample, text, model, avgLogprob, false);
@@ -133,9 +133,10 @@ public final class CaptureStore {
     public boolean insertFinal(String meetingId, StreamKind stream, String seg, long startSample, long endSample,
                                String text, String model, Double avgLogprob, boolean recovered) {
         return database.write(db -> {
-            String speakerId = db.sql("SELECT id FROM speakers WHERE meeting_id = ? AND source = ?")
+            String speakerId = db.sql("SELECT s.id FROM speakers s JOIN meetings m ON m.id = s.meeting_id WHERE s.meeting_id = ? AND s.source = ? AND m.deletion_started_at IS NULL")
                     .params(meetingId, stream.wireName()).query(String.class).optional()
-                    .orElseThrow(() -> new IllegalStateException("unknown meeting " + meetingId));
+                    .orElse(null);
+            if (speakerId == null) return false;
             int inserted = db.sql("INSERT OR IGNORE INTO transcript_segments(meeting_id, speaker_id, agent_seg, start_ms, end_ms, text, avg_logprob, model, recovered) "
                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
                     .params(meetingId, speakerId, seg, startSample / SAMPLES_PER_MS,

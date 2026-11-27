@@ -20,8 +20,7 @@ public final class LifecycleStore {
 
     public boolean trash(String id, long now) {
         return database.write(db -> db.sql("UPDATE meetings SET deleted_at = COALESCE(deleted_at, ?), updated_at = ? "
-                + "WHERE id = ? AND status NOT IN ('recording','degraded','processing') "
-                + "AND NOT EXISTS (SELECT 1 FROM recovery_jobs WHERE meeting_id = meetings.id AND done = 0)")
+                + "WHERE id = ? AND status NOT IN ('recording','degraded','processing')")
                 .params(now, now, id).update() > 0);
     }
 

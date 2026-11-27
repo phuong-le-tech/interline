@@ -28,7 +28,7 @@ class LifecycleController {
     }
     @DeleteMapping("/meetings/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     void trash(@PathVariable("id") String id) {
-        if (!lifecycle.trash(id,clock.millis())) throw ApiProblems.of(HttpStatus.CONFLICT,"meeting_not_deletable","Meeting is missing, recording or being recovered");
+        if (!lifecycle.trash(id,clock.millis())) throw ApiProblems.of(HttpStatus.CONFLICT,"meeting_not_deletable","Meeting is missing, recording or processing");
     }
     @GetMapping("/trash") List<LifecycleStore.Trashed> trash() { return lifecycle.trash(); }
     @PostMapping("/meetings/{id}/restore") @ResponseStatus(HttpStatus.NO_CONTENT)

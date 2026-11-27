@@ -157,8 +157,8 @@ class LifecycleStoreTest {
             capture.setStatus("a",MeetingStatus.RECOVERED,1);
             capture.addRecoveryJob(new CaptureStore.RecoveryJob("job","a",StreamKind.MIC,"unused",0));
             assertThat(lifecycle.trash("a",2)).isTrue();
-            assertThat(capture.pendingRecoveryJobs()).isEmpty();
-            assertThat(capture.insertFinal("a",StreamKind.MIC,"late",0,16,"late transcript","test",null,true)).isFalse();
+            assertThat(capture.pendingRecoveryJobs()).hasSize(1);
+            assertThat(capture.insertFinal("a",StreamKind.MIC,"late",0,16,"late transcript","test",null,true)).isTrue();
             assertThat(lifecycle.restore("a",3)).isTrue();
             assertThat(capture.pendingRecoveryJobs()).hasSize(1);
             lifecycle.trash("a",4);
