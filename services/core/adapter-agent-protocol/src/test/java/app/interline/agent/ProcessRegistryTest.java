@@ -37,4 +37,27 @@ class ProcessRegistryTest {
         }
         assertThat(data.resolve("run/pids.json")).doesNotExist();
     }
+
+    @Test void deadShellOwnerAllowsCoreToReapLockedOrphan() throws Exception {
+        Process orphan = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin/java").toString(),
+                "-cp", System.getProperty("java.class.path"), Owner.class.getName(), data.toString()).start();
+        try {
+            assertThat(orphan.getInputStream().read()).isEqualTo(82);
+            var json = new com.fasterxml.jackson.databind.ObjectMapper();
+            json.writeValue(data.resolve("run/pids.json").toFile(),
+                    new ProcessRegistry.Snapshot(null, ProcessRegistry.identity(orphan.toHandle()), null));
+            try (var registry = new ProcessRegistry(data)) {
+                assertThat(orphan.waitFor(2, TimeUnit.SECONDS)).isTrue();
+            }
+        } finally { orphan.destroyForcibly(); orphan.waitFor(); }
+    }
+
+    public static class Owner {
+        public static void main(String[] args) throws Exception {
+            try (var registry = new ProcessRegistry(Path.of(args[0]))) {
+                System.out.write(82); System.out.flush();
+                Thread.sleep(30_000);
+            }
+        }
+    }
 }
