@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.*;
 final class M1NativeContract {
     /* Native AC5, 2026-11-27, tiny + Silero, Samantha, default GPU, three consecutive runs:
      * mic regions 0/1/3/4: 1/1/0.772152/1; system regions 0/1/3/4: 1/1/1/1 in every run.
-     * Use 0.75, a 0.022152 margin below the measured minimum, for chunk-boundary decode variation;
+     * Use 0.75, a 0.022152 margin below the measured minimum; chunk-boundary decode variation is [to verify];
      * normalized Levenshtein similarity still rejects half missing text (at most 0.5).
      */
     static final double MIN_TRANSCRIPT_SIMILARITY = 0.75;
