@@ -32,12 +32,13 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn spawn(data_dir: &Path, log_dir: &Path) -> Result<Core, String> {
+    pub fn spawn(data_dir: &Path, log_dir: &Path, resources: &Path) -> Result<Core, String> {
+        crate::process_registry::recover(data_dir)?;
         let mut token_bytes = [0u8; TOKEN_BYTES];
         getrandom::fill(&mut token_bytes).map_err(|e| format!("no secure randomness: {e}"))?;
         let token = URL_SAFE_NO_PAD.encode(token_bytes);
 
-        let mut child = command(data_dir, log_dir)?
+        let mut child = command(data_dir, log_dir, resources)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -53,6 +54,7 @@ impl Core {
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Some(port) = ready_port(&line) {
+                    eprintln!("{line}");
                     *published.lock().unwrap() = Some(Endpoint { port, token: token.clone() });
                 }
             }
@@ -94,36 +96,45 @@ fn ready_port(line: &str) -> Option<u16> {
 
 /// Origin the webview of a built (not `tauri dev`) app is served from.
 const BUNDLE_ORIGIN: &str = "tauri://localhost";
-const SIDECAR_AGENT: &str = "interline-capture-macos";
+const SIDECAR_AGENT: &str = "interline-capture";
 
 /// The capture agent bundled next to this executable (Tauri `externalBin`), if any.
 fn sidecar_agent() -> Option<PathBuf> {
-    let agent = std::env::current_exe().ok()?.parent()?.join(SIDECAR_AGENT);
-    agent.is_file().then_some(agent)
+    let executable = std::env::current_exe().ok()?;
+    [SIDECAR_AGENT, "interline-capture-macos"].into_iter()
+        .map(|name| executable.parent().unwrap().join(name)).find(|path| path.is_file())
 }
 
 /// Development launch: the built core jar, with the bundled capture agent when present and the MockAgent at
 /// real-time speed otherwise. The agent stays a grandchild of the shell (shell -> JVM -> agent), which is the
-/// process chain macOS attributes its permissions to. Bundled runtimes arrive in M5.
-fn command(data_dir: &Path, log_dir: &Path) -> Result<Command, String> {
-    if !cfg!(debug_assertions) {
-        return Err("only the development launch exists in M0".to_string());
-    }
+/// process chain macOS attributes its permissions to. Release builds use Resources/core.
+fn command(data_dir: &Path, log_dir: &Path, resources: &Path) -> Result<Command, String> {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let jar = repo.join("services/core/app/target/interline-core.jar");
+    let core = resources.join("core");
+    let jar = if cfg!(debug_assertions) { repo.join("services/core/app/target/interline-core.jar") }
+        else { core.join("interline-core.jar") };
     if !jar.is_file() {
         return Err(format!("core not built: run `./mvnw -DskipTests package` in services/core ({})", jar.display()));
     }
-    let mut java = Command::new(std::env::var_os("JAVA_HOME").map_or("java".into(), |home| Path::new(&home).join("bin/java")));
+    let executable = if cfg!(debug_assertions) {
+        std::env::var_os("JAVA_HOME").map_or("java".into(), |home| Path::new(&home).join("bin/java"))
+    } else { core.join("runtime/bin/java") };
+    let mut java = Command::new(executable);
+    if !cfg!(debug_assertions) {
+        java.current_dir(&core).args(["-XX:SharedArchiveFile=interline-core.jsa", "-Xss512k",
+            "-XX:+UseSerialGC", "-Xmx256m", "-Djava.awt.headless=true", "-Dapple.awt.UIElement=true"])
+            .arg(format!("-Dorg.sqlite.lib.path={}", core.join("native").display()));
+    }
     java.arg("-jar")
-        .arg(jar)
+        .arg(if cfg!(debug_assertions) { jar } else { "interline-core.jar".into() })
         .arg(format!("--data-dir={}", data_dir.display()))
         .arg(format!("--log-dir={}", log_dir.display()));
     match sidecar_agent() {
         Some(agent) => java.arg(format!("--agent={}", agent.display())),
-        None => java
+        None if cfg!(debug_assertions) => java
             .arg(format!("--agent={}", repo.join("services/core/mock-agent/bin/mock-agent").display()))
             .arg("--agent-arg=--speed=1"),
+        None => return Err("bundled capture agent is missing".into()),
     };
     // Development switch for agent flags such as `--voice-processing` (used by scripts/m1/human-gate.sh).
     for flag in std::env::var("INTERLINE_AGENT_ARGS").unwrap_or_default().split_whitespace() {
