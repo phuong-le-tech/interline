@@ -30,3 +30,4 @@ finally:
     except subprocess.TimeoutExpired:
         agent.kill()
         agent.wait()
+        raise AssertionError("Agent did not exit within 3 seconds of stdin EOF")
