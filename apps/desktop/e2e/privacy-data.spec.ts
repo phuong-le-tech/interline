@@ -26,6 +26,7 @@ test('delete, trash, restore and erase; retention persists across a core restart
     await confirmation.getByRole('button', { name: 'Move to trash', exact: true }).click();
     await expect(remove).toHaveCount(0);
     await page.getByRole('button', { name: 'Privacy and data', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'FileVault status is unknown.' })).toHaveCSS('border-inline-start-color', 'rgb(168, 122, 44)');
     await page.getByRole('button', { name: 'Restore Lifecycle meeting', exact: true }).click();
     await expect(page.getByText('Meeting restored.', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Back to meetings', exact: true }).click();
