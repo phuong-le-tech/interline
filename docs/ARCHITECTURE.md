@@ -678,7 +678,7 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | ADR-005 | Note blocks with time anchors and the enhancement contract | [Accepted](docs/adr/ADR-005-blocs-notes-et-contrat-enrichissement.md) |
 | ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | [Accepted](docs/adr/ADR-006-byok-llm-via-agent-secret-store.md) |
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
-| ADR-008 | Audio retention, consent, zero implicit network | To write (M4) |
+| ADR-008 | Audio retention, consent, zero implicit network | [Accepted](adr/ADR-008-data-lifecycle-and-privacy.md) |
 | ADR-007 | Calendar through an ICS subscription URL, parsed in the core | [Accepted](docs/adr/ADR-007-calendar-ics.md) |
 | ADR-009 | macOS capture: process tap primary, ScreenCaptureKit fallback, AEC, whisper packaging, test input, compression | [Draft](docs/adr/ADR-009-macos-capture.md) (spikes pending the M1 sitting) |
 | ADR-010 | License MIT | [Accepted](docs/adr/ADR-010-mit-license.md) |
