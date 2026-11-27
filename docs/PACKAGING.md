@@ -26,6 +26,8 @@ Each check accepts an absolute app path as its first argument. `assert-bundle.sh
 
 Resources and `externalBin` are supplied in the build script's Tauri configuration overlay. The base `tauri.conf.json` has `bundle.active=true`; keeping generated resource paths in the overlay allows `cargo check` and `pnpm tauri dev` from a clean checkout without first staging a release bundle. Development still uses the repository jar, `JAVA_HOME` or `java`, and the existing MockAgent fallback. Both old development sidecar names and the packaged `interline-capture` name are accepted.
 
+The base configuration carries no signing identity; `signingIdentity: "-"` exists only in the local packaging overlay. The Maven wrapper pins the SHA-256 of the Maven 3.9.11 distribution zip, downloaded from its configured Maven Central URL. Tauri's installed CLI forwards Cargo arguments after `--`, so the build uses `pnpm tauri build ... -- --locked` to enforce the committed Cargo lockfile.
+
 ## Runtime and CDS
 
 Verified toolchain: Oracle JDK 21.0.10, Spring Boot 4.1.2. The installed JDK's `jlink --list-plugins` accepts `--compress=zip-6`; the actual build uses `--strip-debug --no-header-files --no-man-pages --compress=zip-6`.
@@ -72,15 +74,17 @@ It passes the absolute bundled agent path, data/log directories, allowed origin 
 
 The core's `run/pids.json` stores `owner` (shell), `core` and `agent` identities: pid, start time in epoch milliseconds and canonical executable path. The registry is replaced atomically on each agent launch/restart. A held `run/pids.lock` protects the data directory from concurrent cores. Both shell and core recovery compare all three identity fields before signalling a process. A live matching shell/core pair is refused rather than reaped. The core can also reap a matched orphan that still holds the lock after its owner disappeared, then retry the lock. The registry is deleted after clean shutdown; the lock file itself can remain.
 
+The agent pid is recorded immediately after spawn; a core crash before that write relies on the agent's stdin-EOF lifeline and the shell's process-group fallback. Recovery never signals its own pid or reserved pids 0/1. Both readers consume at most 64 KiB; oversized, malformed or incomplete registries cause no signal and are replaced when the new core acquires ownership (the shell discards its invalid copy first). On POSIX filesystems, `run/` is created/tightened to 0700 and each new atomic `pids.json` is created as 0600.
+
 The existing stdin-EOF lifelines in `Lifeline.java` and `CaptureAgent/Agent.swift` are reused. No parallel lifeline was added. Quit sends the shutdown command, waits up to 8 seconds, then signals the core's process group. Killing the shell closes the pipe and triggers core shutdown, which shuts down the agent and database. Java regression tests cover changed start time, changed executable, concurrent ownership and a locked orphan. The Rust test independently checks kernel identity matching through macOS libproc at the same millisecond precision as JDK `ProcessHandle`.
 
-`smoke-quit.sh` creates fresh data/log directories for each launch, waits for READY and a visible layer-zero window, samples RSS ten seconds later, and tests Apple-event Quit (8 seconds) and shell SIGKILL (6 seconds). It only checks or cleans up process identities launched by that test. `INTERLINE_DATA_DIR` and `INTERLINE_LOG_DIR` override shell paths for these isolated checks. The application token is never logged or written by the scripts.
+`smoke-quit.sh` creates an isolated HOME for each launch, so Tauri resolves data to `<home>/Library/Application Support/app.interline.desktop` and logs under that temporary home. It waits for READY and a visible layer-zero window, samples RSS ten seconds later, and tests Apple-event Quit (8 seconds) and shell SIGKILL (6 seconds). It only checks or cleans up process identities launched by that test. `INTERLINE_DATA_DIR`, `INTERLINE_LOG_DIR` and `INTERLINE_AGENT_ARGS` are debug-only: release builds ignore them. The release smoke supplies invalid values for those overrides and all three JVM injection variables, preloads oversized/malformed registry files, and checks recovery plus 0700/0600 permissions. Both core and agent spawn environments strip `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS` and every `DYLD_*` key. No test-only release feature was added. The application token is never logged or written by the scripts.
 
 Local ad-hoc builds disable hardened runtime only in the packaging overlay and explicitly clear inherited runtime signing flags while applying their local signatures. The first real-agent probe otherwise failed dyld library validation because the ad-hoc process and whisper framework had no matching Team ID. This is a local test-build requirement, not the release hardened-runtime decision; that decision and any release entitlements remain open under ADR-004. No keychain was accessed.
 
 ## Measured budgets
 
-Machine: Apple M4, 32 GiB RAM, macOS 27.2.1 (26B131), arm64. Date: 2026-11-27. MB means 1,000,000 bytes; MiB means 1,048,576 bytes. M1 8 GB results, a second Mac, GitHub runners and real Gatekeeper dialogs remain [to verify].
+Baseline build: commit `1ad579d`, before the security follow-up below. Machine: Apple M4, 32 GiB RAM, macOS 27.2.1 (26B131), arm64. Date: 2026-11-27. MB means 1,000,000 bytes; MiB means 1,048,576 bytes. M1 8 GB results, a second Mac, GitHub runners and real Gatekeeper dialogs remain [to verify].
 
 These are measured process-cold launches with fresh databases and a warm filesystem cache, not post-reboot cold-cache measurements. The final core-only smoke reached READY in 1.302 s with CDS enforced; the two full-shell launches reached READY in 1.596 s and 2.024 s. Earlier full-shell launches under simultaneous build/test load took 2.679-3.057 s. The M1 cold-start target remains [to verify]. No test requested a model or actual microphone/system-audio recording.
 
@@ -122,7 +126,7 @@ The all-process RAM sample above is from a separate `open -n -g -a <app>` Launch
 
 This is a sum of RSS, not unique physical memory: shared pages can be counted in several processes. Excluding the other system XPC services still gives 496.89 MB for shell, WebKit, core and agent, above 350 MB. Smoke checks use temporary data and do not access personal notes, models, credentials or the login keychain.
 
-## Verification and integration notes
+## Initial M4-A verification and integration notes
 
 All commands ran locally on 2026-11-27. No dependencies or workflow changes were added. No push or PR was made.
 
@@ -133,7 +137,7 @@ All commands ran locally on 2026-11-27. No dependencies or workflow changes were
 | `scripts/package/smoke-core.sh` | PASS, relocated runtime, enforced CDS, 2,489 shared Spring classes, SQLite and MockAgent meeting start/stop |
 | `scripts/package/measure-agent.sh` | PASS, real agent hello and stdin EOF exit |
 | `scripts/package/smoke-quit.sh` | PASS, Apple-event Quit and SIGKILL, no leftover core or agent |
-| `cd services/core && ./mvnw -B verify` | PASS, 1,377 test executions, 0 failures/errors, 7 skipped |
+| `cd services/core && ./mvnw -B verify` | PASS, 1,396 test executions from Maven aggregate summaries, 0 failures/errors, 7 skipped |
 | `cd apps/desktop && pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test` | PASS, 98 UI tests across 6 files |
 | `cd apps/desktop && pnpm test:e2e` | PASS, 26 passed, 1 skipped; shared `/tmp/interline-e2e.lock` held and released |
 | `cd apps/desktop && pnpm tauri dev --no-watch` | PASS, default Vite port 5173 and core READY, isolated data; CLI and Vite stopped afterwards under the same shared lock |
@@ -144,8 +148,33 @@ All commands ran locally on 2026-11-27. No dependencies or workflow changes were
 
 The Java count includes unit and packaged-contract executions; skipped native tests are not real-device evidence. The extra locked-orphan regression and portable Java test children were also checked with `./mvnw -B -pl adapter-agent-protocol -am -Dtest=ProcessRegistryTest -Dsurefire.failIfNoSpecifiedTests=false test` (3 passed). The existing core and Swift lifelines were inspected and the packaged tests exercised them without adding a second implementation.
 
-The shell uses **392 physical lines across all Rust source files, including tests**: `main.rs` 162, `supervisor.rs` 147, `process_registry.rs` 83. With coordinator approval, the legacy repository guard changed from 299 to the architecture's 400-line ceiling, still counting every Rust file. M4-C's future `filevault.rs` must be counted at integration; this branch does not raise the cap above 400.
+The initial shell used **392 physical lines across all Rust source files, including tests**: `main.rs` 162, `supervisor.rs` 147, `process_registry.rs` 83. With coordinator approval, the legacy repository guard changed from 299 to the architecture's 400-line ceiling, still counting every Rust file. The security follow-up below exceeds that ceiling with explicit coordinator authorization; this branch leaves AC16 unchanged for the coordinator's separate cap decision.
 
 Changed areas: `scripts/package/`; the Tauri Info.plist, configuration and launcher plus process identity matcher; the Java agent adapter's registry and launch bookkeeping; core bean lifecycle wiring and the repository budget regression; this document and ADR-013. The pre-existing untracked root `package.json` and `pnpm-lock.yaml` were left untouched.
 
 Not verified: M1 8 GB, a second Mac, actual Gatekeeper/quarantine dialogs, release signing/TCC persistence, release entitlements or hardened-runtime policy, GitHub runners, real-model recording RAM and live transcript latency. The installed-size, DMG-size and RSS budgets currently fail and need separate work before the M4 milestone can claim those budgets.
+
+## Security follow-up (2026-11-27)
+
+Recovery now excludes the shell's own pid and Java's own/reserved pids, bounds both readers to 64 KiB, discards malformed/incomplete input without signalling, and creates private 0700/0600 registry storage. Regression tests exercise self identity, oversized valid JSON, malformed/trailing input, an incomplete core paired with a live agent, and actual POSIX permissions. The existing pid/start-time/executable and live-owner checks remain in place.
+
+Release builds compile out the three development overrides and remove them from the core environment as well: otherwise Spring's relaxed binding can still interpret inherited `INTERLINE_AGENT_ARGS`. JVM and `DYLD_*` injection keys are removed independently at both process-spawn boundaries. Debug mode retains its directory/agent overrides. Packaged checks use HOME isolation instead of a test-only release feature and deliberately provide invalid development overrides/JVM options to catch either direct or indirect inheritance.
+
+Usage strings are truthful in both the shell plist and the native agent's embedded plist: transcription occurs locally; calendar/transcript content can be sent when the user asks a configured AI provider to use it. The bundle assertion compares all three source strings with the installed plist and the actual native executable. Packaging removes only the generated agent executable before SwiftPM builds it, forcing relinking because SwiftPM does not track the plist supplied through linker flags. No Swift capture behavior changed.
+
+The Maven distribution checksum was checked with a fresh `MAVEN_USER_HOME` and `./mvnw -v` (Maven 3.9.11). A copied wrapper with an intentionally incorrect checksum rejected the download with a SHA-256 validation error. Cargo receives `--locked` through Tauri's runner arguments. Ad-hoc signing remains exclusively in the local build overlay; no dependency, workflow, release-signing or entitlement change was added.
+
+The current Rust total is **500 physical lines, including all tests**: `main.rs` 164, `supervisor.rs` 183, `process_registry.rs` 153. **AC16 is a known, expected red** against its unchanged 400-line ceiling, per explicit approval to implement the security fixes readably. The coordinator owns the separate cap decision; this branch does not raise or weaken the assertion.
+
+| Security follow-up check | Result |
+|---|---|
+| `./mvnw -B -pl adapter-agent-protocol -am -Dtest=ProcessRegistryTest,ProcessEnvironmentTest -Dsurefire.failIfNoSpecifiedTests=false test` | PASS, 7 tests |
+| `./mvnw -B '-Dtest=*,!RepositoryTest#AC16_manualShellSourceStaysWithinFourHundredRustLines' -Dsurefire.failIfNoSpecifiedTests=false verify` | PASS, 1,407 executions, 0 failures/errors, 7 skipped; excludes only the authorized AC16 red |
+| `./mvnw -B -pl app -am -Dtest=RepositoryTest#AC16_manualShellSourceStaysWithinFourHundredRustLines -Dsurefire.failIfNoSpecifiedTests=false test` | EXPECTED FAIL, one assertion reports 500 against 400 |
+| `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test` | PASS, 98 UI tests |
+| `pnpm test:e2e` under the shared lock | PASS, 26 passed, 1 existing native skip; lock released |
+| `cargo check && cargo test && cargo clippy -- -D warnings` | PASS, 7 debug tests, no warnings |
+| `cargo test --release --locked` | PASS, 7 release tests, including removal of Spring environment aliases |
+| `pnpm tauri dev --no-watch` under the shared lock | PASS, development overrides honored, invalid JVM injection removed, READY reached; CLI and Vite stopped |
+
+The first default `./mvnw -B verify` attempt reported AC16 plus a boot-time 404 timeout in `M2EnhanceTest`. The serialized all-other verification above reran that class (37 cases) and the entire gate successfully. Counts here come from Maven's per-phase aggregate log summaries, because subsequent targeted tests overwrite some JUnit XML files; the initial M4-A count above is corrected on the same basis. No test assertion or timeout was relaxed.
