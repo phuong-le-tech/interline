@@ -9,7 +9,10 @@ test -d "$app/Contents/MacOS/whisper.framework"
 test "$(find "$app/Contents/Resources/core" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 4
 test "$(find "$app/Contents/MacOS" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 3
 for key in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription NSCalendarsFullAccessUsageDescription; do
-  /usr/libexec/PlistBuddy -c "Print :$key" "$app/Contents/Info.plist" >/dev/null
+  expected=$(/usr/libexec/PlistBuddy -c "Print :$key" "$root/apps/desktop/src-tauri/Info.plist")
+  test "$(/usr/libexec/PlistBuddy -c "Print :$key" "$app/Contents/Info.plist")" = "$expected"
+  test "$(/usr/libexec/PlistBuddy -c "Print :$key" "$root/agents/macos-capture/Resources/Info.plist")" = "$expected"
+  grep -aF "$expected" "$app/Contents/MacOS/interline-capture" >/dev/null
 done
 cmp "$root/services/core/app/target/interline-core.jar" "$app/Contents/Resources/core/interline-core.jar"
 test -x "$app/Contents/MacOS/interline-capture"

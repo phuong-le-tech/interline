@@ -43,10 +43,17 @@ def wait_for(check, seconds, message):
 
 
 def run(mode, scratch, window_probe):
-    data = scratch / mode
-    data.mkdir()
-    log = data / "shell.log"
-    env = dict(os.environ, INTERLINE_DATA_DIR=str(data), INTERLINE_LOG_DIR=str(data / "logs"))
+    home = scratch / mode
+    home.mkdir()
+    data = home / "Library/Application Support/app.interline.desktop"
+    (data / "run").mkdir(parents=True)
+    (data / "run/pids.json").write_bytes(b" " * 65537 if mode == "quit" else b"{")
+    log = home / "shell.log"
+    ignored_data = home / "ignored-data"
+    ignored_logs = home / "ignored-logs"
+    env = dict(os.environ, HOME=str(home), INTERLINE_DATA_DIR=str(ignored_data), INTERLINE_LOG_DIR=str(ignored_logs),
+               INTERLINE_AGENT_ARGS="--invalid-release-smoke-argument", JAVA_TOOL_OPTIONS="-XX:InvalidSmokeOption=1",
+               JDK_JAVA_OPTIONS="-XX:InvalidSmokeOption=1", _JAVA_OPTIONS="-XX:InvalidSmokeOption=1")
     saved = []
     with log.open("w") as output:
         began = time.monotonic()
@@ -65,7 +72,14 @@ def run(mode, scratch, window_probe):
                                 3, "No process registry")
             saved = [snapshot[key] for key in ("core", "agent") if snapshot.get(key)]
             assert len(saved) == 2, snapshot
-            assert all(alive(p) for p in saved), snapshot
+            assert all(alive(p) for p in saved), {
+                "saved": snapshot, "observed": [identity(p["pid"]) for p in saved],
+                "shell": log.read_text(), "agent": [p.read_text() for p in home.rglob("agent.log")],
+            }
+            assert (data / "run").stat().st_mode & 0o777 == 0o700
+            assert registry.stat().st_mode & 0o777 == 0o600
+            assert not ignored_data.exists() and not ignored_logs.exists(), "Release honored a development directory override"
+            assert not any(key in log.read_text() for key in ("Picked up JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
             # Capture a steady idle sample; model loading and user permissions are never requested.
             time.sleep(10)
             rss = {name: int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(pid)], text=True).strip())

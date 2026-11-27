@@ -7,6 +7,8 @@ test "$(uname -sm)" = 'Darwin arm64' || { echo 'This local package targets Apple
 tauri="$root/apps/desktop/src-tauri"
 stage="$tauri/target/package"
 triple=$(rustc -vV | awk '/^host:/ {print $2}')
+# SwiftPM does not track the Info.plist passed to the linker as an input; force that output to relink.
+rm -f "$root/agents/macos-capture/.build/release/interline-capture-macos"
 (cd "$root/agents/macos-capture" && swift build -c release)
 cp "$root/agents/macos-capture/.build/release/interline-capture-macos" "$stage/interline-capture-$triple"
 cd "$root/apps/desktop"
@@ -15,10 +17,10 @@ pnpm build
 rm -rf "$stage/ui"
 cp -R dist "$stage/ui"
 # Keep generated paths in a build overlay, so clean tauri dev and cargo check need no package staging.
-config='{"bundle":{"resources":{"target/package/core/":"core/","target/package/ui/":"ui/"},"externalBin":["target/package/interline-capture"],"macOS":{"hardenedRuntime":false}}}'
+config='{"bundle":{"resources":{"target/package/core/":"core/","target/package/ui/":"ui/"},"externalBin":["target/package/interline-capture"],"macOS":{"hardenedRuntime":false,"signingIdentity":"-"}}}'
 # An earlier bundle may have left read-only jlink resources in Tauri's build-copy directory.
 rm -rf "$tauri/target/release/core" "$tauri/target/release/ui"
-pnpm tauri build --bundles app --config "$config"
+pnpm tauri build --bundles app --config "$config" -- --locked
 app="$tauri/target/release/bundle/macos/Interline.app"
 # whisper.framework uses @loader_path and must sit beside the sidecar.
 ditto "$root/agents/macos-capture/.build/release/whisper.framework" "$app/Contents/MacOS/whisper.framework"

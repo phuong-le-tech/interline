@@ -87,6 +87,7 @@ class CoreConfiguration {
 
     @Bean(destroyMethod = "close")
     DurableCaptureIngest ingest(InterlineProperties properties, @org.jspecify.annotations.Nullable ProcessRegistry registry) {
+        // The registry dependency acquires process ownership before the database is opened.
         return new DurableCaptureIngest(properties.dataDir());
     }
 

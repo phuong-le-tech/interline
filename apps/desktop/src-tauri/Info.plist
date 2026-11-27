@@ -5,10 +5,10 @@
   <key>LSMinimumSystemVersion</key>
   <string>14.2</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Interline records your voice to transcribe the meeting on this Mac. Audio never leaves your computer.</string>
+  <string>Interline records your voice and transcribes audio on your Mac. Transcripts leave it only if you ask a configured AI provider to use them.</string>
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Interline records the other participants' audio to transcribe the meeting on this Mac. Audio never leaves your computer.</string>
+  <string>Interline records meeting audio and transcribes it on your Mac. Transcripts leave it only if you ask a configured AI provider to use them.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
-  <string>Interline reads your calendar to prepare meeting notes on this Mac. Calendar data never leaves your computer.</string>
+  <string>Interline reads calendar events on your Mac to prepare meeting notes. They leave it only if you ask a configured AI provider to use them.</string>
 </dict>
 </plist>
