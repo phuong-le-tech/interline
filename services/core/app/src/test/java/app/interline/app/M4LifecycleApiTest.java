@@ -51,7 +51,7 @@ class M4LifecycleApiTest {
             assertThat(response).contains("calendar.example.com","llm.example.com","provider_test:test-provider","configured")
                     .doesNotContain("sk-test", "user:", "https://", "secret_account", "base_url");
             context.getBean(AgentSecrets.class).unbind();
-            assertThat(ok(call(port,"GET","/privacy",null),"privacy without agent").body()).contains("unknown", "configuration unavailable");
+            assertThat(call(port,"GET","/privacy",null).status()).isEqualTo(503);
         }
     }
 

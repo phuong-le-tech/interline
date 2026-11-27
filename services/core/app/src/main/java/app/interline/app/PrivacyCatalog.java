@@ -29,12 +29,9 @@ final class PrivacyCatalog {
             items.add(new Item("provider_test", "Model-list request and API authentication", ACTION, null, "off"));
         }
         // Only EventKit is polled. ICS fetches occur exclusively on the explicit Sync request.
-        try {
-            var host = calendar.host();
-            items.add(new Item("ics", "Calendar subscription request (including its private address)", ACTION, host.orElse(null), host.isPresent() ? "configured" : "off"));
-        } catch (org.springframework.web.ErrorResponseException e) {
-            items.add(new Item("ics", "Calendar subscription request; configuration unavailable while the secret store is unavailable", ACTION, null, "unknown"));
-        }
+        var calendarHost = calendar.host();
+        items.add(new Item("ics", "Calendar subscription request (including its private address)", ACTION,
+                calendarHost.orElse(null), calendarHost.isPresent() ? "configured" : "off"));
         for (var status : models.statuses()) {
             items.add(new Item("model_download:" + status.entry().id(), "Model file request, IP address and optional resume offset", ACTION,
                     host(status.entry().url().toString()), "configured"));
