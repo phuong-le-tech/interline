@@ -119,6 +119,18 @@ waited for the process exit instead of the end of the stream, and `resume.acked`
 dead agent instead of the durable watermark. A test tee JVM lingered about 2 s after its child died because a
 thread blocked on stdin delays JVM exit on macOS; the test helpers now SIGKILL themselves.
 
+Native AC5 compares normalized outside-gap transcript regions using character similarity
+`1 - Levenshtein distance / max length`, because restart chunk boundaries can change tiny-model decoding
+on byte-identical PCM. On 2026-11-27, three consecutive local Mac runs with the release agent, default GPU,
+`ggml-tiny.bin`, `ggml-silero-v6.2.0.bin`, `--language=en` and Samantha passed: in each run, mic regions
+0/1/3/4 scored 1.000000/1.000000/0.772152/1.000000 and system regions 0/1/3/4 scored
+1.000000/1.000000/1.000000/1.000000 (region 2 overlaps the gap and is excluded). The threshold is 0.75,
+a margin of 0.022152 below the observed minimum; an initial calibration run produced the same scores.
+Unit controls reject blank recovery and half missing text, accept the reported region 3 pair (0.775) and
+identical text, and fail for that pair when the threshold is temporarily raised to 0.80. PCM equality,
+gap size, discontinuity, replay, region counts and the 1,999,999,999 ns resume limit are unchanged.
+The GitHub macOS VM was not run locally; its 2 s latency gate may still fail independently of this change.
+
 ### 6. Audio compression: decision only, no implementation in M1
 
 The core stores 16 kHz PCM (about 115 MB per hour per stream). Decision: **do not ship compression in v1.0
