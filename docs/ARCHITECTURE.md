@@ -674,7 +674,7 @@ Verified in the build files at M0, unless otherwise noted. Checked on the web on
 | ADR-001 | Hybrid stack B (Tauri shell, Spring Boot core, native agents) | Accepted |
 | ADR-002 | Capture agent contract (Agent Protocol v1 over stdio) | Accepted |
 | ADR-003 | Platform ports, no OS leak, adding an OS | Accepted |
-| ADR-004 | macOS distribution without the Apple Developer Program (self-signed identity, install script) | Proposed (Accepted after the M1 spike) |
+| ADR-004 | macOS distribution without the Apple Developer Program (self-signed identity, install script) | Accepted (2026-11-27, option 2) |
 | ADR-005 | Note blocks with time anchors and the enhancement contract | [Accepted](docs/adr/ADR-005-blocs-notes-et-contrat-enrichissement.md) |
 | ADR-006 | BYOK LLM via Spring AI, keys in the OS secret store via the agent | [Accepted](docs/adr/ADR-006-byok-llm-via-agent-secret-store.md) |
 | ADR-007 | Calendar: agent (EventKit) + ICS in the core, no OAuth in v1 | To write (M3) |
