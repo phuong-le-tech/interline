@@ -33,4 +33,13 @@ mod tests {
             assert_eq!(parse_status(output), "unknown");
         }
     }
+    #[test]
+    fn command_timeout_and_failure_are_unknown() {
+        use std::{process::Command, time::{Duration, Instant}};
+        let started = Instant::now();
+        assert_eq!(super::command_status(Command::new("/bin/sleep").arg("5"), Duration::from_millis(20)), "unknown");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(super::command_status(&mut Command::new("/usr/bin/false"), Duration::from_secs(1)), "unknown");
+    }
+
 }

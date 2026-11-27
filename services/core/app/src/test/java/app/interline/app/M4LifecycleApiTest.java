@@ -23,7 +23,7 @@ class M4LifecycleApiTest {
             assertThat(call(port,"GET","/meetings",null).json()).hasSize(1);
             ok(call(port,"DELETE","/meetings/"+id,null),"trash again");
             ok(call(port,"DELETE","/trash/"+id,null),"erase");
-            ok(call(port,"DELETE","/trash/"+id,null),"erase retry");
+            assertThat(call(port,"DELETE","/trash/"+id,null).status()).isEqualTo(404);
             assertThat(call(port,"GET","/trash",null).json()).isEmpty();
             assertThat(M3Support.callWithAuth(port,"GET","/privacy",null,null).status()).isEqualTo(401);
             String privacy = ok(call(port,"GET","/privacy",null),"privacy").body();
@@ -52,6 +52,29 @@ class M4LifecycleApiTest {
                     .doesNotContain("sk-test", "user:", "https://", "secret_account", "base_url");
             context.getBean(AgentSecrets.class).unbind();
             assertThat(call(port,"GET","/privacy",null).status()).isEqualTo(503);
+        }
+    }
+
+    @Test void deleteMissingOrNotTrashedMeetingsReturns404() {
+        try (var context = boot(data)) {
+            int port = port(context);
+            assertThat(call(port,"DELETE","/meetings/unknown",null).status()).isEqualTo(404);
+            assertThat(call(port,"DELETE","/trash/unknown",null).status()).isEqualTo(404);
+            String id = ok(call(port,"POST","/meetings",Map.of("title","Live")),"create").json().path("id").asText();
+            assertThat(call(port,"DELETE","/trash/"+id,null).status()).isEqualTo(404);
+            assertThat(call(port,"GET","/meetings",null).json()).hasSize(1);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"GET,brief", "GET,blocks", "POST,enhance", "GET,export?format=markdown",
+            "GET,transcript", "GET,actions", "GET,ai-runs", "POST,brief/ai", "POST,followup-email"})
+    void trashedMeetingReadersAndGeneratorsReturn404(String method,String route) {
+        try (var context = boot(data)) {
+            int port = port(context);
+            String id = ok(call(port,"POST","/meetings",Map.of("title","Private")),"create").json().path("id").asText();
+            ok(call(port,"DELETE","/meetings/"+id,null),"trash");
+            assertThat(call(port,method,"/meetings/"+id+"/"+route,method.equals("POST") ? Map.of() : null).status()).as(route).isEqualTo(404);
         }
     }
 

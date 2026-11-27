@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import stylesheet from '../styles.css?raw';
 import { Retention } from './Retention';
 import { Trash } from './Trash';
 import { Privacy } from './Privacy';
@@ -50,4 +51,17 @@ describe('Privacy and data components', () => {
     render(<FileVaultNotice state="on" />);
     expect(screen.queryByRole('status')).toBeNull();
   });
+  it('explains that upgrades keep old audio and changes never shorten existing deadlines', async () => {
+    render(<Retention load={async () => ({ audio_retention: '7d' })} save={vi.fn()} />);
+    expect(screen.getByText(/audio from before this upgrade/i)).toBeVisible();
+    expect(screen.getByText(/never shorten/i)).toBeVisible();
+    await waitFor(() => expect(screen.getByLabelText('Audio retention')).toBeEnabled());
+  });
+  it('uses the globally defined ochre token without an inline color fallback', () => {
+    render(<FileVaultNotice state="off" />);
+    expect(screen.getByRole('status').getAttribute('style')).toContain('var(--ochre)');
+    expect(screen.getByRole('status').getAttribute('style')).not.toContain('#');
+    expect(stylesheet).toMatch(/--ochre:\s*#A87A2C/);
+  });
+
 });

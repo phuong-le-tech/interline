@@ -167,4 +167,58 @@ class LifecycleStoreTest {
         }
     }
 
+    @Test void settingChangesOnlyExtendScheduledUnpurgedDeadlines() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var settings = new SettingsStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            capture.createMeeting("scheduled",0);
+            capture.setStatus("scheduled",MeetingStatus.DONE,DAY);
+            Files.createDirectories(data.resolve("audio/scheduled"));
+            Files.writeString(data.resolve("audio/scheduled/0.pcm"),"keep");
+            settings.setAudioRetention("forever",7 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+            lifecycle.purgeAudio(8 * DAY);
+            assertThat(Files.exists(data.resolve("audio/scheduled/0.pcm"))).isTrue();
+            settings.setAudioRetention("7d",8 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+            capture.createMeeting("extended",0);
+            capture.setStatus("extended",MeetingStatus.DONE,DAY);
+            settings.setAudioRetention("30d",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            settings.setAudioRetention("7d",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            settings.setAudioRetention("after_transcription",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+        }
+    }
+
+    private static Long deadline(SqliteDatabase db,String id) {
+        return db.read(c -> c.sql("SELECT audio_purge_at FROM meetings WHERE id=?").param(id).query((rs,n) -> {
+            Object value = rs.getObject(1); return value == null ? null : ((Number)value).longValue();
+        }).single());
+    }
+
+    @Test void hardAndScheduledTrashDeletionNeverHoldTheDatabaseMonitorWhileDeletingFiles() {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            for (String id : new String[]{"a","b","c"}) {
+                capture.createMeeting(id,0); capture.setStatus(id,MeetingStatus.DONE,1);
+            }
+            var removed = new java.util.ArrayList<String>();
+            var lifecycle = new LifecycleStore(db,id -> {
+                assertThat(Thread.holdsLock(db)).as("file deletion must not hold the capture database monitor").isFalse();
+                capture.setLanguage("b","fr");
+                removed.add(id);
+            });
+            lifecycle.trash("a",2); lifecycle.trash("c",2);
+            lifecycle.hardDelete("a");
+            lifecycle.purgeTrash(31 * DAY);
+            assertThat(removed).containsExactly("a","c");
+            assertThat(capture.language("b")).isEqualTo("fr");
+            assertThat(capture.findMeeting("b")).isPresent();
+        }
+    }
+
 }

@@ -34,7 +34,7 @@ class MigrationV7Test {
                 if (upgrade) {
                     assertThat(strings(c,"SELECT plain_text FROM note_blocks")).containsExactly("Original notes");
                     assertThat(strings(c,"SELECT text FROM transcript_segments")).containsExactly("Original transcript");
-                    assertThat(strings(c,"SELECT audio_purge_at FROM meetings WHERE id='old'")).containsExactly("604800002");
+                    assertThat(strings(c,"SELECT audio_purge_at FROM meetings WHERE id='old'")).containsExactly((String) null);
                 }
                 assertThat(strings(c,"PRAGMA foreign_key_check")).isEmpty();
             }
