@@ -73,7 +73,7 @@ Order rationale: M0 proves the architecture and its portability with no audio at
 
 ## M4 - Packaging, self-signed distribution and public beta (9 pd)
 
-- **Goal**: an app anyone installs with one Terminal command (or a documented "Open Anyway" step), that updates itself, keeps its permissions across updates, and is complete enough to hand to a stranger. No Apple Developer Program (ADR-004). **The signing method itself is not decided yet: Phuong deferred it, pick it at the M4 gate between ADR-004 options 1 to 4.**
+- **Goal**: an app anyone installs with one Terminal command (or a documented "Open Anyway" step), that updates itself, keeps its permissions across updates, and is complete enough to hand to a stranger. No Apple Developer Program (ADR-004). **Signing method: ADR-004 option 2, self-signed project identity (accepted 2026-11-27).**
 - **Content**:
   - Packaging: jlink runtime (module list confirmed by `jdeps`), CDS training run, bundle layout (ARCHITECTURE 14.3), JVM options, extracted and signed SQLite dylib.
   - Signing and release (ADR-004 release steps): project self-signed identity in CI, pinned designated requirement, inside-out signing of every Mach-O, hardened runtime or not depending on library validation [decision M4], DMG + `Interline.app.tar.gz`, signed `latest.json` for the Tauri updater, `SHA256SUMS`, `install.sh` with the pinned certificate fingerprint; `make signing-identity` and `make install` for source builds; own Homebrew tap only if the M1 spike retained it.
