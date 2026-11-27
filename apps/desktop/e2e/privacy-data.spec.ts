@@ -15,7 +15,9 @@ test('delete, trash, restore and erase; retention persists across a core restart
     expect(stack.viteReady, stack.diagnostics()).toBe(true);
     await page.goto('/');
     await page.getByLabel('Meeting title', { exact: true }).fill('Lifecycle meeting');
+    const created = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/meetings'));
     await page.getByRole('button', { name: 'New meeting', exact: true }).click();
+    expect((await created).ok()).toBe(true);
     await page.reload();
     const remove = page.getByRole('button', { name: 'Delete Lifecycle meeting', exact: true });
     await remove.click();
