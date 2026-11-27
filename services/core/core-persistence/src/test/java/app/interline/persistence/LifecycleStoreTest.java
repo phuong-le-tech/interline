@@ -44,6 +44,26 @@ class LifecycleStoreTest {
         }
     }
 
+    @Test void unconfirmedTranscriptionKeepsAudioAndResumingCancelsTheDeadline() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            new SettingsStore(db).setAudioRetention("after_transcription",0);
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            capture.createMeeting("a",0);
+            Files.createDirectories(data.resolve("audio/a"));
+            Files.writeString(data.resolve("audio/a/part.pcm"),"test");
+            capture.setStatus("a",MeetingStatus.DONE,1,false);
+            lifecycle.purgeAudio(DAY);
+            assertThat(Files.exists(data.resolve("audio/a/part.pcm"))).isTrue();
+            capture.createMeeting("a",2);
+            capture.setStatus("a",MeetingStatus.DONE,3,true);
+            capture.createMeeting("a",4);
+            lifecycle.purgeAudio(DAY);
+            assertThat(Files.exists(data.resolve("audio/a/part.pcm"))).isTrue();
+            assertThat(lifecycle.trash("a",5)).isFalse();
+        }
+    }
+
     @Test void trashRestoresAndHardDeleteCascadesOnlyItsOwnRowsAndFiles() throws Exception {
         try (var db = SqliteDatabase.open(data.resolve("db"))) {
             var capture = new CaptureStore(db);
@@ -54,6 +74,8 @@ class LifecycleStoreTest {
                 capture.setStatus(id, MeetingStatus.DONE, 1);
                 Files.createDirectories(data.resolve("audio/" + id));
                 Files.writeString(data.resolve("audio/" + id + "/part.pcm"), "test");
+                Files.createDirectories(data.resolve("recovery/" + id));
+                Files.writeString(data.resolve("recovery/" + id + "/part.wav"), "recovered");
                 Files.createDirectories(data.resolve("spool/" + id));
                 Files.writeString(data.resolve("spool/" + id + "/part.pcm"), "rescue");
                 db.write(c -> {
@@ -81,6 +103,7 @@ class LifecycleStoreTest {
             }
             assertThat(Files.exists(data.resolve("audio/a"))).isFalse();
             assertThat(Files.exists(data.resolve("spool/a"))).isFalse();
+            assertThat(Files.exists(data.resolve("recovery/a"))).isFalse();
             assertThat(Files.exists(data.resolve("audio/b/part.pcm"))).isTrue();
             assertThat(new SearchStore(db).search("unique")).allMatch(hit -> hit.meetingId().equals("b")).hasSize(2);
         }
