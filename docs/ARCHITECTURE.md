@@ -7,7 +7,7 @@ v1 ships on macOS only. The architecture is portable from day one: Windows and L
 ## 1. Constraints that shape everything
 
 1. **No OS API leaks into the core.** The Spring Boot core is one jar that runs unchanged on macOS, Windows and Linux. Everything OS-specific lives in the capture agent (native, one per OS) or in Tauri (already cross-platform).
-2. **The shell is dumb.** Tauri owns windows, the webview, the tray and process supervision. No business logic, no audio, no SQL, no network in Rust. Budget: 200 to 400 lines of Rust. M4 exception: the cap is 550 (measured 500 on the packaging branch) because process recovery and security guards exceed the original 400 [to review in M5].
+2. **The shell is dumb.** Tauri owns windows, the webview, the tray and process supervision. No business logic, no audio, no SQL, no network in Rust. Budget: 200 to 400 lines of Rust. M4 exception: the cap is 600 (measured 557: packaging 500, FileVault 57) because orphan-process recovery, security guards and FileVault exceed the original 200 to 400 budget [to review in M5].
 3. **Local-first, zero implicit network.** Unchanged from draft 1: audio never leaves the machine, LLM calls only to the provider the user configured.
 4. **Never lose notes, never lose more than ~2 s of audio.** Notes never transit through the agent. Audio is spooled to disk by the agent before it is sent, and acknowledged by the core only once durable.
 5. **The whole pipeline must run in CI on a Linux runner with no audio device**, through a `MockAgent` that replays a WAV fixture.
