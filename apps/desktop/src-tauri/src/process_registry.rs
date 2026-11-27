@@ -70,6 +70,55 @@ pub fn recover(data: &Path) -> Result<(), String> {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn with_registry(contents: &[u8], check: impl FnOnce(&Path)) {
+        let data = std::env::temp_dir().join(format!("interline-registry-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(data.join("run")).unwrap();
+        std::fs::write(data.join("run/pids.json"), contents).unwrap();
+        check(&data);
+        std::fs::remove_dir_all(data).unwrap();
+    }
+
+    fn encoded(process: &Identity) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"core": {"pid": process.pid,
+            "startTime": process.start_time, "executable": process.executable}})).unwrap()
+    }
+
+    #[test]
+    fn recovery_cannot_signal_itself() {
+        let current = identity(std::process::id() as i32).unwrap();
+        assert!(!signalable(&current));
+        with_registry(&encoded(&current), |data| assert!(recover(data).is_ok()));
+    }
+
+    #[test]
+    fn oversized_and_malformed_registries_do_not_kill() {
+        let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let mut oversized = encoded(&identity(child.id() as i32).unwrap());
+        oversized.resize(65537, b' ');
+        for contents in [oversized, b"{".to_vec(), b"null".to_vec()] {
+            with_registry(&contents, |data| assert!(recover(data).is_ok()));
+        }
+        let running = child.try_wait().unwrap().is_none();
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(running);
+    }
+
+    #[test]
+    fn registry_permissions_are_private() {
+        with_registry(b"{", |data| {
+            recover(data).unwrap();
+            assert_eq!(std::fs::metadata(data.join("run")).unwrap().permissions().mode() & 0o777, 0o700);
+        });
+        let current = identity(std::process::id() as i32).unwrap();
+        with_registry(&encoded(&current), |data| {
+            recover(data).unwrap();
+            assert_eq!(std::fs::metadata(data.join("run/pids.json")).unwrap().permissions().mode() & 0o777, 0o600);
+        });
+    }
     #[test]
     fn recycled_pid_and_changed_executable_do_not_match() {
         let mut saved = identity(std::process::id() as i32).unwrap();

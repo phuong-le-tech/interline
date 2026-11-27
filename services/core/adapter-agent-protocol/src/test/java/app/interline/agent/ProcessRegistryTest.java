@@ -9,6 +9,44 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProcessRegistryTest {
     @TempDir Path data;
 
+    @Test void currentProcessAndReservedPidsCannotBeKilled() {
+        var current = ProcessRegistry.identity(ProcessHandle.current());
+        assertThat(ProcessRegistry.killMatching(current)).isFalse();
+        for (long pid : new long[] {-1, 0, 1}) {
+            assertThat(ProcessRegistry.killMatching(new ProcessRegistry.Identity(pid, current.startTime(), current.executable())))
+                    .isFalse();
+        }
+    }
+
+    @Test void oversizedAndMalformedRegistriesAreIgnoredAndReplacedWithoutKilling() throws Exception {
+        Process child = owner();
+        try {
+            var json = new com.fasterxml.jackson.databind.ObjectMapper();
+            String valid = json.writeValueAsString(new ProcessRegistry.Snapshot(null,
+                    ProcessRegistry.identity(child.toHandle()), null));
+            for (String content : new String[] {valid + " ".repeat(65536), valid + " garbage", "{", "null",
+                    "{\"core\":{},\"agent\":" + json.writeValueAsString(ProcessRegistry.identity(child.toHandle())) + "}"}) {
+                java.nio.file.Files.createDirectories(data.resolve("run"));
+                java.nio.file.Files.writeString(data.resolve("run/pids.json"), content);
+                try (var registry = new ProcessRegistry(data)) {
+                    assertThat(child.isAlive()).isTrue();
+                    assertThat(json.readTree(data.resolve("run/pids.json").toFile()).path("core").path("pid").asLong())
+                            .isEqualTo(ProcessHandle.current().pid());
+                }
+            }
+        } finally { child.destroyForcibly(); child.waitFor(); }
+    }
+
+    @Test void registryDirectoryAndFileArePrivateOnPosix() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        try (var registry = new ProcessRegistry(data)) {
+            assertThat(java.nio.file.Files.getPosixFilePermissions(data.resolve("run")))
+                    .isEqualTo(java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+            assertThat(java.nio.file.Files.getPosixFilePermissions(data.resolve("run/pids.json")))
+                    .isEqualTo(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        }
+    }
+
     @Test void recycledPidAndDifferentExecutableAreNeverKilled() throws Exception {
         Process child = owner();
         try {
