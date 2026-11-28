@@ -79,6 +79,7 @@ export function Palette({ client, onClose, onOpenMeeting, onOpenSettings }: Prop
           <button type="button" onClick={onClose}>{t('dismiss')}</button>
         </div>
         {query.length >= 2 && results.length === 0 && <p>{t('no_results')}</p>}
+        <p className="sr-only" aria-live="polite">{results.length} {t('search_results')}</p>
         <ul role="listbox" aria-label={t('search_results')}>
           {results.map((hit, index) => (
             <li

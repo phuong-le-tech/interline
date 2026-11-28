@@ -27,6 +27,7 @@ describe('onboarding and settings accessible controls', () => {
       { id: 'large', name: 'Large', kind: 'stt', state: 'failed', sizeBytes: 1000, downloadedBytes: 100, error: 'No space left on device' },
     ]} />);
     expect(screen.getByRole('status')).toHaveTextContent('Choose the smaller model: Small');
+    expect(screen.getByText('partial')).toHaveAttribute('aria-live', 'polite');
     expect(onDownload).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
     expect(onDownload).toHaveBeenCalledExactlyOnceWith('small');

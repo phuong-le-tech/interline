@@ -29,7 +29,7 @@ export function Models({ models, onDownload, system }: { models: ModelView[]; on
       <ul aria-label={t('model_catalog')}>
         {models.map((model) => (
           <li key={model.id}>
-            <strong>{model.name}</strong> <span>{formatBytes(model.sizeBytes)}</span> <span>{t(`model_${model.state}`)}</span>
+            <strong>{model.name}</strong> <span>{formatBytes(model.sizeBytes)}</span> <span aria-live="polite">{t(`model_${model.state}`)}</span>
             {recommended?.id === model.id && <span> - {t('model_recommended')}</span>}
             {model.state === 'downloading' && (
               <div
