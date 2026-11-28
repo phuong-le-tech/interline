@@ -34,7 +34,7 @@ Use OpenSSL 3 (`brew install openssl@3`; the macOS `openssl` is LibreSSL and has
 4. **Create the updater key pair** (minisign format, separate from the certificate):
 
    ```sh
-   cd apps/desktop && pnpm tauri signer generate -w ~/interline-updater.key
+   cd apps/desktop && pnpm install --frozen-lockfile && pnpm tauri signer generate -w ~/interline-updater.key
    ```
 
    It prints the public key and writes `interline-updater.key` (private) and `interline-updater.key.pub`. Put the content of the `.pub` file into `plugins.updater.pubkey` in `apps/desktop/src-tauri/tauri.conf.json` (replacing the `REPLACE_WITH...` placeholder) and commit that change. The release job refuses to run while the placeholder is there.
@@ -43,14 +43,18 @@ Use OpenSSL 3 (`brew install openssl@3`; the macOS `openssl` is LibreSSL and has
 
    | Name | Kind | Value |
    |---|---|---|
-   | `MACOS_SIGNING_P12_BASE64` | secret | `base64 -i interline-signing.p12 \| pbcopy` |
-   | `MACOS_SIGNING_P12_PASSWORD` | secret | the PKCS#12 password from step 2 |
-   | `TAURI_SIGNING_PRIVATE_KEY` | secret | content of `interline-updater.key` |
-   | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | its password |
+   | `MACOS_SIGNING_P12_BASE64` | secret | `base64 -i interline-signing.p12 > p12.b64 && gh secret set MACOS_SIGNING_P12_BASE64 < p12.b64` (then delete `p12.b64`) |
+   | `MACOS_SIGNING_P12_PASSWORD` | secret | the PKCS#12 password from step 2: `gh secret set MACOS_SIGNING_P12_PASSWORD` (prompts) |
+   | `TAURI_SIGNING_PRIVATE_KEY` | secret | `gh secret set TAURI_SIGNING_PRIVATE_KEY < interline-updater.key` |
+   | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | its password (never empty: an empty password leaves the update key unprotected if the secret leaks) |
    | `INTERLINE_SIGNING_IDENTITY` | variable | `Interline Release Signing` (the certificate common name) |
    | `INTERLINE_CERT_SHA256` | variable | the SHA-256 from step 3 (with or without colons) |
 
-6. **Store the offline copies**: `.p12` plus password and the updater key plus password in your offline vault. Then delete the loose `interline-signing.key` and `.crt` files (`rm -P`).
+6. **Store the offline copies**: `.p12` plus password and the updater key plus password in your offline vault. Then delete the loose `interline-signing.key`, `.crt`, `.p12` and `p12.b64` files with a normal `rm` (secure overwrite does not work on APFS; the vault copy is the one that matters).
+
+7. **Restrict who can use the secrets (you do this yourself in the GitHub settings).** Move the four secrets into a GitHub **Environment** (for example `release`) limited to tags `v*` with a required reviewer (you), and add `environment: release` to the `macos` job. Add a **tag protection ruleset** for `v*` so only you can create release tags. Without these, anyone who can push a tag can trigger a signed draft.
+
+The minisign updater key is the update trust root: the app installs whatever `latest.json` points to if its signature verifies against the public key in `tauri.conf.json`. The "second click" is enforced by the UI only; there is no rollback (downgrade) protection. Guard that key accordingly.
 
 ## Cutting a release
 
@@ -60,7 +64,7 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The `macos` job builds with `scripts/package/build.sh`, imports the identity into a temporary keychain, signs every Mach-O inside-out with `scripts/package/sign-macos.sh` (designated requirement pinned to the certificate SHA-1), checks that the leaf certificate matches `INTERLINE_CERT_SHA256`, then makes `Interline.app.tar.gz` (+ `.sig` from the updater key), the DMG, `latest.json`, `install.sh` (fingerprint rendered in) and `SHA256SUMS`, and creates a **draft** release. The keychain is deleted in an `always()` step. Publish the draft yourself after the checklist.
 
-The tag must be `v<semver>` and higher than the installed version: the updater compares `latest.json` `version` with the app version in `tauri.conf.json`, so bump that first.
+The tag must match `^v[0-9]+\.[0-9]+\.[0-9]+$` and equal `v` plus the `version` in `tauri.conf.json` (the job fails early otherwise), and be higher than the installed version: the updater compares `latest.json` `version` with the app version in `tauri.conf.json`, so bump that first.
 
 ## First-release checklist
 
@@ -80,7 +84,7 @@ The tag must be `v<semver>` and higher than the installed version: the updater c
 
 ## Contributors
 
-`make signing-identity` (once) creates a local identity "Interline Dev Signing" in its own keychain `~/Library/Keychains/interline-dev.keychain-db`; it never touches the login keychain. `make install` builds, signs with it and copies the app to `~/Applications`. Delete it with `security delete-keychain ~/Library/Keychains/interline-dev.keychain-db`.
+`make signing-identity` (once) creates a local identity "Interline Dev Signing" in its own keychain `~/Library/Keychains/interline-dev.keychain-db`; it never touches the login keychain. The keychain password (`interline-dev`) is public by design: the keychain only holds a dev key for your own local builds. `make install` builds, signs with it and copies the app to `~/Applications`. Delete it with `security delete-keychain ~/Library/Keychains/interline-dev.keychain-db`.
 
 ## Local checks
 

@@ -12,6 +12,9 @@ BASE_URL=${INTERLINE_BASE_URL:-https://github.com/phuong-le-tech/interline/relea
 die() { echo "interline install: $*" >&2; exit 1; }
 
 case $FINGERPRINT in @*) die "no pinned fingerprint in this copy; download install.sh from a release page" ;; esac
+pinned=$(printf '%s' "$FINGERPRINT" | tr -d ':' | tr 'a-f' 'A-F')
+case $pinned in *[!0-9A-F]*) die "the pinned fingerprint is not hexadecimal" ;; esac
+[ "${#pinned}" -eq 64 ] || die "the pinned fingerprint must be 64 hex digits (SHA-256)"
 [ "$(uname -s)" = Darwin ] || die "macOS only"
 [ "$(uname -m)" = arm64 ] || die "this release is built for Apple Silicon (arm64)"
 os=${INTERLINE_OS_VERSION:-$(sw_vers -productVersion)}
@@ -19,8 +22,12 @@ major=${os%%.*}; rest=${os#*.}; minor=${rest%%.*}
 [ "$major" -gt 14 ] || { [ "$major" -eq 14 ] && [ "${minor:-0}" -ge 2 ]; } || die "macOS 14.2 or later is required (found $os)"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/interline-install.XXXXXX")
-staged=
-cleanup() { rm -rf "$tmp"; [ -z "$staged" ] || rm -rf "$staged"; }
+staged=; aside=
+# On failure the previous app is put back; the staged copy and the temp folder are always removed.
+cleanup() {
+  rm -rf "$tmp"; [ -z "$staged" ] || rm -rf "$staged"
+  if [ -n "$aside" ] && [ ! -e "$dest/Interline.app" ]; then mv "$aside" "$dest/Interline.app"; fi
+}
 trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
@@ -41,7 +48,6 @@ codesign --verify --deep --strict "$app" || die "code signature is not valid, no
 # codesign writes the certificate chain as codesign0 (leaf), codesign1, ... into the working directory.
 (cd "$tmp/cert" && codesign -d --extract-certificates "$app" 2>/dev/null)
 found=$(/usr/bin/openssl x509 -inform DER -noout -fingerprint -sha256 -in "$tmp/cert/codesign0" | sed 's/.*=//' | tr -d ':' | tr 'a-f' 'A-F')
-pinned=$(printf '%s' "$FINGERPRINT" | tr -d ':' | tr 'a-f' 'A-F')
 [ "$found" = "$pinned" ] || die "certificate fingerprint mismatch (found $found), nothing was installed"
 
 dest=${INTERLINE_INSTALL_DIR:-}
@@ -51,9 +57,11 @@ fi
 mkdir -p "$dest"
 staged="$dest/.Interline.app.$$"
 ditto "$app" "$staged"
-rm -rf "$dest/Interline.app"
-mv "$staged" "$dest/Interline.app"
+codesign --verify --deep --strict "$staged" || die "the copied app does not verify, nothing was replaced"
+if [ -e "$dest/Interline.app" ]; then aside="$dest/.Interline.old.$$"; mv "$dest/Interline.app" "$aside"; fi
+mv "$staged" "$dest/Interline.app" || die "cannot move the new app into place"
 staged=
+[ -z "$aside" ] || { rm -rf "$aside"; aside=; }
 xattr -dr com.apple.quarantine "$dest/Interline.app" 2>/dev/null || true
 echo "Installed $dest/Interline.app (certificate $found)"
 [ "${INTERLINE_NO_OPEN:-}" = 1 ] || open "$dest/Interline.app"

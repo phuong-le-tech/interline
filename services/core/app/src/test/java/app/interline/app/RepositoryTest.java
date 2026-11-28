@@ -48,7 +48,7 @@ class RepositoryTest {
                 try(var source=Files.lines(p)) { return source.count(); }
                 catch(java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
             }).sum();
-            // M4 exception: cap 600, measured 557 (packaging 500, FileVault 57); the original 200 to 400 budget is exceeded by orphan-process recovery, security guards and FileVault, to be reviewed in M5.
+            // M4 exception: cap 600, measured 575 (packaging 500, FileVault 57, updater 18); the original 200 to 400 budget is exceeded by orphan-process recovery, security guards and FileVault, to be reviewed in M5.
             assertThat(lines).as("Rust shell lines across all files incl. tests, M4 cap 600").isBetween(1L,600L);
         }
     }

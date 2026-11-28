@@ -26,7 +26,9 @@ leftovers() { [ -z "$(ls -A "$work/tmp")" ] || fail "temporary files left: $(ls 
 good="$work/install.good.sh"; "$here/render-install.sh" "$ID_SHA256" > "$good"
 bad="$work/install.bad.sh"; "$here/render-install.sh" "$(printf '0%.0s' $(seq 64))" > "$bad"
 
+mkdir -p "$work/ok/Interline.app"; echo old > "$work/ok/Interline.app/marker"   # an existing install gets replaced
 run "$good" "$work/ok" >/dev/null
+[ ! -e "$work/ok/Interline.app/marker" ] || fail "old app not replaced"
 codesign --verify --deep --strict "$work/ok/Interline.app"; leftovers
 [ "$(find "$work/ok" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] || fail "staging folder left behind"
 echo "PASS good install"
@@ -47,6 +49,32 @@ for v in 14.1 13.6.4; do
 done
 run "$good" "$work/o14" INTERLINE_OS_VERSION=14.2 >/dev/null; run "$good" "$work/o15" INTERLINE_OS_VERSION=15.0 >/dev/null
 echo "PASS old macOS aborts (14.1, 13.6.4), 14.2 and 15.0 accepted"
+
+mkdir -p "$work/keep/Interline.app"; echo old > "$work/keep/Interline.app/marker"
+run "$bad" "$work/keep" 2>/dev/null && fail "fingerprint mismatch installed over an existing app"
+[ -f "$work/keep/Interline.app/marker" ] && [ "$(find "$work/keep" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] || fail "existing app was not left untouched"
+leftovers
+echo "PASS a failed install leaves the existing app untouched"
+
+for fp in abc "$(printf 'G%.0s' $(seq 64))"; do
+  sed "s/@FINGERPRINT_SHA256@/$fp/" "$here/install.sh" > "$work/install.fp.sh"
+  run "$work/install.fp.sh" "$work/fp" 2>"$work/err" && fail "malformed fingerprint accepted"; grep -q 'fingerprint' "$work/err"
+done
+leftovers
+echo "PASS malformed pinned fingerprint aborts"
+
+# Negative tests for the post-sign assertion (SIGN_VERIFY_ONLY=1 runs only the assertion).
+verify() { SIGN_VERIFY_ONLY=1 SIGN_IDENTITY="Interline Throwaway Test" SIGN_KEYCHAIN="$kc" "$here/sign-macos.sh" "$work/neg/Interline.app" >/dev/null 2>&1; }
+ditto "$work/src" "$work/neg"
+verify || fail "assertion rejects a correctly signed app"
+mkdir -p "$work/neg/Interline.app/Contents/Resources"; cp /usr/bin/false "$work/neg/Interline.app/Contents/Resources/extra"
+codesign --remove-signature "$work/neg/Interline.app/Contents/Resources/extra"
+verify && fail "assertion accepted an unsigned Mach-O"
+codesign --force --sign - "$work/neg/Interline.app/Contents/Resources/extra"
+verify && fail "assertion accepted an ad-hoc Mach-O"
+codesign --force --sign "Interline Throwaway Test" --keychain "$kc" -i x.other "$work/neg/Interline.app/Contents/Resources/extra"
+verify && fail "assertion accepted a Mach-O without the pinned DR"
+echo "PASS sign-macos.sh assertion fails on unsigned, ad-hoc and unpinned Mach-O"
 
 run "$here/install.sh" "$work/u" 2>"$work/err" && fail "unrendered script installed"; grep -q 'no pinned fingerprint' "$work/err"; leftovers
 echo "PASS unrendered script aborts"

@@ -26,6 +26,10 @@ Commands: `SIGN_IDENTITY=... SIGN_KEYCHAIN=<throwaway> [SIGN_HARDENED=1] [SIGN_E
 
 The entitlement files stay embedded (`scripts/package/entitlements/`): they are inert without the hardened runtime and make a later switch (`SIGN_HARDENED=1` plus `disable-library-validation`, variant C) a one-line change if notarization ever returns.
 
+## Consequence and residual risks
+
+With the hardened runtime off, `DYLD_*` variables are honoured by `Interline.app`'s own executable. **Any process of the same user can launch Interline.app with an injected dylib (`DYLD_INSERT_LIBRARIES`) and inherit its microphone and system-audio TCC grants without a prompt.** The M4-A environment stripping removes `DYLD_*` and JVM injection variables from the children (core, agent); it does not protect the shell itself, which has already loaded its libraries by then. This is accepted: a same-user attacker can already read the user's notes database, and without a Team ID the hardened runtime is only available with library validation disabled (variant C), which does not stop `DYLD_INSERT_LIBRARIES` of a library signed by the attacker's own identity. Listed as a residual risk; switching to variant C without `allow-dyld-environment-variables` is the mitigation to evaluate if it matters.
+
 ## Not verified
 
 TCC prompts for the microphone and system audio on a signed build (needs a human at the machine; ADR-004 spike results still apply); a Sequoia or Tahoe-only behaviour on other macOS versions; whether `audio-input` is ever required without the hardened runtime (not required in A: the agent ran).

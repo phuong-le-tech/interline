@@ -4,6 +4,7 @@
 # Env:   SIGN_IDENTITY   certificate common name (required)
 #        SIGN_KEYCHAIN   keychain file that holds it (optional, default: search list)
 #        SIGN_ENTITLEMENTS_DIR  folder with jvm.plist and agent.plist (default: ./entitlements)
+#        SIGN_VERIFY_ONLY  1 = skip signing, only run the final assertion (used by the negative tests)
 #        SIGN_HARDENED   1 = hardened runtime with entitlements (default 0, see ADR-014)
 set -euo pipefail
 app=${1:?path to Interline.app}
@@ -25,6 +26,7 @@ sign() { # <path> <identifier> [entitlements]
 }
 macho() { file -b "$1" | grep -q 'Mach-O'; }
 
+if [ "${SIGN_VERIFY_ONLY:-0}" != 1 ]; then
 # 1. every loose Mach-O: jlink runtime (java, jspawnhelper, dylibs), libsqlitejdbc.dylib, the Swift agent.
 while IFS= read -r -d '' f; do
   macho "$f" || continue
@@ -42,6 +44,7 @@ done < <(find "$app/Contents" -type f -print0)
 # 2. frameworks, then 3. the bundle (the shell is its main executable).
 while IFS= read -r -d '' fw; do sign "$fw" "app.interline.$(basename "${fw%.framework}")"; done < <(find "$app/Contents" -type d -name '*.framework' -print0)
 sign "$app" app.interline.desktop
+fi
 
 # Assert: nothing left unsigned or ad-hoc, every Mach-O carries our DR, the whole bundle verifies.
 bad=0

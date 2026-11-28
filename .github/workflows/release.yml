@@ -31,13 +31,20 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
-      - name: Refuse a release with placeholders
-        run: |
-          grep -q 'REPLACE_WITH' apps/desktop/src-tauri/tauri.conf.json && { echo 'tauri.conf.json still has the placeholder updater public key (docs/RELEASE.md)'; exit 1; }
-          [ -n "$CERT_SHA256" ] || { echo 'repository variable INTERLINE_CERT_SHA256 is not set (docs/RELEASE.md)'; exit 1; }
+      - name: Validate the tag and the placeholders
         env:
           CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
-      - name: Import the signing identity into a temporary keychain
+        run: |
+          printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag '$TAG' is not vMAJOR.MINOR.PATCH"; exit 1; }
+          conf=$(python3 -I -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
+          [ "v$conf" = "$TAG" ] || { echo "tag $TAG does not match tauri.conf.json version $conf"; exit 1; }
+          if grep -q 'REPLACE_WITH' apps/desktop/src-tauri/tauri.conf.json; then echo 'tauri.conf.json still has the placeholder updater public key (docs/RELEASE.md)'; exit 1; fi
+          [ -n "$CERT_SHA256" ] || { echo 'repository variable INTERLINE_CERT_SHA256 is not set (docs/RELEASE.md)'; exit 1; }
+      - name: Install dependencies (no secrets in this step)
+        run: cd apps/desktop && pnpm install --frozen-lockfile
+      - name: Build
+        run: scripts/package/build.sh
+      - name: Import the signing identity (after the build, so no build script can use the key)
         env:
           P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
@@ -50,11 +57,9 @@ jobs:
           security create-keychain -p "$KC_PW" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/identity.p12" -x -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN"
           rm -f "$RUNNER_TEMP/identity.p12"
-      - name: Build
-        run: scripts/package/build.sh
       - name: Sign inside-out and check the pinned certificate
         env:
           SIGN_IDENTITY: ${{ vars.INTERLINE_SIGNING_IDENTITY }}
@@ -69,8 +74,6 @@ jobs:
           [ "$found" = "$want" ] || { echo "signed with $found, expected $want"; exit 1; }
       - name: Package release assets
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
         run: |
           out="$RUNNER_TEMP/release"; mkdir -p "$out"
@@ -78,12 +81,20 @@ jobs:
           version=${TAG#v}
           # Tarball and DMG are made after the last codesign call.
           COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -czf "$out/Interline.app.tar.gz" Interline.app
-          (cd apps/desktop && pnpm install --frozen-lockfile && pnpm tauri signer sign "$out/Interline.app.tar.gz")
           dmg_root=$(mktemp -d); ditto "$app" "$dmg_root/Interline.app"; ln -s /Applications "$dmg_root/Applications"
           hdiutil create -ov -format UDZO -volname Interline -srcfolder "$dmg_root" "$out/Interline_${version}_aarch64.dmg"
           scripts/package/render-install.sh "$CERT_SHA256" > "$out/install.sh"
-          scripts/package/make-latest-json.sh "$version" "$GITHUB_REPOSITORY" "$TAG" "$out/Interline.app.tar.gz.sig" > "$out/latest.json"
-          (cd "$out" && shasum -a 256 Interline.app.tar.gz "Interline_${version}_aarch64.dmg" install.sh latest.json > SHA256SUMS)
+          echo "OUT=$out" >> "$GITHUB_ENV"
+      - name: Sign the update archive (the only step that sees the updater key; dependencies are already installed)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cd apps/desktop && pnpm exec tauri signer sign "$OUT/Interline.app.tar.gz"
+      - name: Manifest and checksums
+        run: |
+          version=${TAG#v}
+          scripts/package/make-latest-json.sh "$version" "$GITHUB_REPOSITORY" "$TAG" "$OUT/Interline.app.tar.gz.sig" > "$OUT/latest.json"
+          (cd "$OUT" && shasum -a 256 Interline.app.tar.gz "Interline_${version}_aarch64.dmg" install.sh latest.json > SHA256SUMS)
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}

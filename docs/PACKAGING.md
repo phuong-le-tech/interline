@@ -164,13 +164,13 @@ Usage strings are truthful in both the shell plist and the native agent's embedd
 
 The Maven distribution checksum was checked with a fresh `MAVEN_USER_HOME` and `./mvnw -v` (Maven 3.9.11). A copied wrapper with an intentionally incorrect checksum rejected the download with a SHA-256 validation error. Cargo receives `--locked` through Tauri's runner arguments. Ad-hoc signing remains exclusively in the local build overlay; no dependency, workflow, release-signing or entitlement change was added.
 
-The current Rust total is **500 physical lines, including all tests**: `main.rs` 164, `supervisor.rs` 183, `process_registry.rs` 153. **M4 exception:** the product owner raised the AC16 shell cap to 600 lines (all Rust files, including tests); measured total 557 (packaging 500, FileVault 57). The original 200 to 400 budget is exceeded by orphan-process recovery, security guards and FileVault [to review in M5].
+The current Rust total is **500 physical lines, including all tests**: `main.rs` 164, `supervisor.rs` 183, `process_registry.rs` 153. **M4 exception:** the product owner raised the AC16 shell cap to 600 lines (all Rust files, including tests); measured total 575 (packaging 500, FileVault 57, updater 18). The original 200 to 400 budget is exceeded by orphan-process recovery, security guards and FileVault [to review in M5].
 
 | Security follow-up check | Result |
 |---|---|
 | `./mvnw -B -pl adapter-agent-protocol -am -Dtest=ProcessRegistryTest,ProcessEnvironmentTest -Dsurefire.failIfNoSpecifiedTests=false test` | PASS, 7 tests |
 | `./mvnw -B '-Dtest=*,!RepositoryTest#AC16_manualShellRustStaysWithinTheM4Budget' -Dsurefire.failIfNoSpecifiedTests=false verify` | PASS, 1,407 executions, 0 failures/errors, 7 skipped; excludes only the authorized AC16 red |
-| `./mvnw -B -pl app -am -Dtest=RepositoryTest#AC16_manualShellRustStaysWithinTheM4Budget -Dsurefire.failIfNoSpecifiedTests=false test` | PASS after the cap was raised to 600; 557 measured |
+| `./mvnw -B -pl app -am -Dtest=RepositoryTest#AC16_manualShellRustStaysWithinTheM4Budget -Dsurefire.failIfNoSpecifiedTests=false test` | PASS after the cap was raised to 600; 575 measured |
 | `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test` | PASS, 98 UI tests |
 | `pnpm test:e2e` under the shared lock | PASS, 26 passed, 1 existing native skip; lock released |
 | `cargo check && cargo test && cargo clippy -- -D warnings` | PASS, 7 debug tests, no warnings |
