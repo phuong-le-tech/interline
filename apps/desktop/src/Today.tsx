@@ -46,8 +46,8 @@ export function Today({ client, onOpenMeeting }: { client: CoreClient; onOpenMee
   const connect = () =>
     run(async () => {
       await client.setIcsSource(url);
-      setUrl('');
       await client.syncCalendar();
+      setUrl('');
     });
 
   const open = (action: () => Promise<{ id: string }>) =>
