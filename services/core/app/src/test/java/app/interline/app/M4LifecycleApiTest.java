@@ -27,7 +27,7 @@ class M4LifecycleApiTest {
             assertThat(call(port,"GET","/trash",null).json()).isEmpty();
             assertThat(M3Support.callWithAuth(port,"GET","/privacy",null,null).status()).isEqualTo(401);
             String privacy = ok(call(port,"GET","/privacy",null),"privacy").body();
-            assertThat(privacy).contains("model_download", "not available", "eventkit").doesNotContain("secret_account", "sk-test");
+            assertThat(privacy).contains("model_download", "update_check", "github.com", "eventkit").doesNotContain("secret_account", "sk-test");
         }
         try (var context = boot(data)) {
             assertThat(call(port(context),"GET","/settings/retention",null).json().path("audio_retention").asText()).isEqualTo("30d");

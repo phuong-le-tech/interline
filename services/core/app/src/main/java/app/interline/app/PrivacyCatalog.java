@@ -12,6 +12,9 @@ final class PrivacyCatalog {
     static final Map<String,String> OUTBOUND_CLIENTS = Map.of(
             "HttpIcsFetcher.java", "ics", "ModelDownloader.java", "model_download",
             "SpringAiLlm.java", "llm", "ConnectionTester.java", "provider_test");
+    /** Outbound clients of the Tauri shell (Cargo dependencies), mapped to their catalog item. */
+    static final Map<String,String> OUTBOUND_SHELL_CRATES = Map.of("tauri-plugin-updater", "update_check");
+    static final String UPDATE_HOST = "github.com";
     static final String ACTION = "only after your action";
     @JsonInclude(JsonInclude.Include.ALWAYS)
     record Item(String id, String what, String when, String destinationHost, String state) { }
@@ -37,7 +40,7 @@ final class PrivacyCatalog {
                     host(status.entry().url().toString()), "configured"));
         }
         if (models.statuses().isEmpty()) items.add(new Item("model_download", "Model file request", ACTION, null, "off"));
-        items.add(new Item("auto_update", "not available", ACTION, null, "off"));
+        items.add(new Item("update_check", "Request for the latest release description (your IP address, app version and system); the download itself is served by GitHub", ACTION, UPDATE_HOST, "configured"));
         items.add(new Item("eventkit", "Local calendar access through the agent; no network call", "continuously", null, "off"));
         items.add(new Item("agent", "Local capture, transcription and secret storage; no network call", ACTION, null, "off"));
         return List.copyOf(items);

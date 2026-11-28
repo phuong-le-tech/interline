@@ -25,7 +25,10 @@ class WorkflowTest {
         assertThat(file).as("Release skeleton").isRegularFile();
         Map<String,Object> document = new Yaml().load(Files.readString(file));
         Map<?,?> jobs = (Map<?,?>)document.get("jobs");
-        assertThat(jobs.containsKey("macos")).isTrue();
+        // the macOS release is split: "build" (no secrets) and "release" (signing, protected environment)
+        assertThat(jobs.containsKey("build")).isTrue();
+        assertThat(((Map<?,?>)jobs.get("release")).get("environment")).isEqualTo("release");
+        assertThat(((Map<?,?>)jobs.get("release")).get("needs")).isEqualTo("build");
         assertThat(jobs.containsKey("windows")).isTrue();
         assertThat(jobs.containsKey("linux")).isTrue();
     }

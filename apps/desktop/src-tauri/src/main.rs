@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager, RunEvent, State};
 #[cfg(target_os = "macos")]
 use tauri::{image::Image, menu::{Menu, MenuItem}, tray::TrayIconBuilder};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
+use tauri_plugin_updater::UpdaterExt;
 
 /// The only URL scheme the UI may ask the shell to open: the macOS privacy panes.
 const SETTINGS_SCHEME: &str = "x-apple.systempreferences:";
@@ -39,6 +40,22 @@ fn notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
         return Ok(()); // the user declined: the in-app banner still shows
     }
     notification.builder().title(title).body(body).show().map_err(|e| e.to_string())
+}
+
+/// Asks the release feed for a newer version. Runs only when the user clicks; there is no timer.
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<String>, String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    Ok(update.map(|u| u.version))
+}
+
+/// Downloads and installs the update, after the user's second click. The minisign signature is verified first.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let update = update.ok_or("already up to date")?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    app.restart()
 }
 
 #[tauri::command]
@@ -106,8 +123,9 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(CoreState(Mutex::new(Err("core is starting".to_string()))))
-        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings, notify, set_tray_state, filevault::filevault_status])
+        .invoke_handler(tauri::generate_handler![get_core_endpoint, open_system_settings, notify, set_tray_state, check_update, install_update, filevault::filevault_status])
         .on_window_event(|window, event| {
             #[cfg(target_os = "macos")]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

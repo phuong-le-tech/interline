@@ -60,6 +60,10 @@ fixtures/**/*.wav
 fixtures/**/*.aiff
 fixtures/**/*.caf
 *.p12
+*.key
+*.pem
+*.crt
+*.keychain
 *.keychain-db
 .whisper/
 !services/core/app/src/main/resources/models/
