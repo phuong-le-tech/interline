@@ -60,6 +60,7 @@ export function App() {
   const [deleting, setDeleting] = useState<Meeting>();
   const settingsButton = useRef<HTMLButtonElement>(null);
   const preparingRecording = useRef(false);
+  const resumableDownloads = useRef(new Set<string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -267,6 +268,7 @@ export function App() {
 
   const download = async (id: string) => {
     if (!client) return;
+    resumableDownloads.current.add(id);
     setModels((current) => current.map((m) => (m.id === id ? { ...m, state: 'downloading', error: undefined } : m)));
     try {
       await client.downloadModel(id);
@@ -274,6 +276,22 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  useEffect(() => {
+    if (!client) return;
+    for (const model of models) {
+      if (model.state === 'installed') resumableDownloads.current.delete(model.id);
+      if (model.state !== 'failed' || !resumableDownloads.current.delete(model.id)
+        || model.downloadedBytes <= 0 || /checksum|no space|disk full/i.test(model.error ?? '')) continue;
+      // shortcut: one automatic resume per explicit download; add bounded backoff if repeated interruptions become common.
+      setModels((current) => current.map((value) => value.id === model.id ? { ...value, state: 'downloading', error: undefined } : value));
+      void client.downloadModel(model.id).catch((e: unknown) => {
+        setError(String(e));
+        setModels((current) => current.map((value) => value.id === model.id && value.state === 'downloading'
+          ? { ...value, state: 'failed', error: String(e) } : value));
+      });
+    }
+  }, [client, models]);
 
   const openMeetingNotes = (id: string, segmentId?: number) => {
     setSelectedMeetingId(id);

@@ -67,6 +67,8 @@ export function Palette({ client, onClose, onOpenMeeting, onOpenSettings }: Prop
           type="text"
           role="combobox"
           aria-expanded={results.length > 0}
+          aria-controls="search-results"
+          aria-autocomplete="list"
           aria-activedescendant={selected >= 0 ? `search-result-${selected}` : undefined}
           placeholder={t('search_placeholder')}
           value={query}
@@ -80,7 +82,7 @@ export function Palette({ client, onClose, onOpenMeeting, onOpenSettings }: Prop
         </div>
         {query.length >= 2 && results.length === 0 && <p>{t('no_results')}</p>}
         <p className="sr-only" aria-live="polite">{results.length} {t('search_results')}</p>
-        <ul role="listbox" aria-label={t('search_results')}>
+        <ul id="search-results" role="listbox" aria-label={t('search_results')}>
           {results.map((hit, index) => (
             <li
               key={`${hit.type}-${hit.id}`}
