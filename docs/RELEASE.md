@@ -1,0 +1,87 @@
+# Releasing Interline (macOS)
+
+Design and trade-offs: ADR-004 (self-signed project identity), ADR-014 (no hardened runtime). The workflow is `.github/workflows/release.yml`; it only ever creates a **draft** release. It cannot be run end to end without the secrets below, so the first tag is the real test (see the checklist).
+
+## One-time setup (maintainer, on an offline machine)
+
+Use OpenSSL 3 (`brew install openssl@3`; the macOS `openssl` is LibreSSL and has no `-legacy`). Work in an empty folder that is not inside the repository.
+
+1. **Create the signing identity** (10 years, code signing only):
+
+   ```sh
+   openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes \
+     -keyout interline-signing.key -out interline-signing.crt \
+     -subj "/CN=Interline Release Signing" \
+     -addext "basicConstraints=critical,CA:false" \
+     -addext "keyUsage=critical,digitalSignature" \
+     -addext "extendedKeyUsage=critical,codeSigning"
+   ```
+
+2. **Export a PKCS#12** (`-legacy` so that `security import` can read it) and choose a password:
+
+   ```sh
+   openssl pkcs12 -export -legacy -inkey interline-signing.key -in interline-signing.crt \
+     -name "Interline Release Signing" -out interline-signing.p12
+   ```
+
+3. **Read the fingerprints.** The SHA-256 is published and pinned in `install.sh`; the SHA-1 is only used inside the designated requirement (the script computes it itself).
+
+   ```sh
+   openssl x509 -in interline-signing.crt -noout -fingerprint -sha256
+   openssl x509 -in interline-signing.crt -noout -fingerprint -sha1
+   ```
+
+4. **Create the updater key pair** (minisign format, separate from the certificate):
+
+   ```sh
+   cd apps/desktop && pnpm tauri signer generate -w ~/interline-updater.key
+   ```
+
+   It prints the public key and writes `interline-updater.key` (private) and `interline-updater.key.pub`. Put the content of the `.pub` file into `plugins.updater.pubkey` in `apps/desktop/src-tauri/tauri.conf.json` (replacing the `REPLACE_WITH...` placeholder) and commit that change. The release job refuses to run while the placeholder is there.
+
+5. **Set the GitHub secrets and variables** (Settings > Secrets and variables > Actions). Never commit any of these values.
+
+   | Name | Kind | Value |
+   |---|---|---|
+   | `MACOS_SIGNING_P12_BASE64` | secret | `base64 -i interline-signing.p12 \| pbcopy` |
+   | `MACOS_SIGNING_P12_PASSWORD` | secret | the PKCS#12 password from step 2 |
+   | `TAURI_SIGNING_PRIVATE_KEY` | secret | content of `interline-updater.key` |
+   | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | its password |
+   | `INTERLINE_SIGNING_IDENTITY` | variable | `Interline Release Signing` (the certificate common name) |
+   | `INTERLINE_CERT_SHA256` | variable | the SHA-256 from step 3 (with or without colons) |
+
+6. **Store the offline copies**: `.p12` plus password and the updater key plus password in your offline vault. Then delete the loose `interline-signing.key` and `.crt` files (`rm -P`).
+
+## Cutting a release
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The `macos` job builds with `scripts/package/build.sh`, imports the identity into a temporary keychain, signs every Mach-O inside-out with `scripts/package/sign-macos.sh` (designated requirement pinned to the certificate SHA-1), checks that the leaf certificate matches `INTERLINE_CERT_SHA256`, then makes `Interline.app.tar.gz` (+ `.sig` from the updater key), the DMG, `latest.json`, `install.sh` (fingerprint rendered in) and `SHA256SUMS`, and creates a **draft** release. The keychain is deleted in an `always()` step. Publish the draft yourself after the checklist.
+
+The tag must be `v<semver>` and higher than the installed version: the updater compares `latest.json` `version` with the app version in `tauri.conf.json`, so bump that first.
+
+## First-release checklist
+
+- [ ] Steps 1 to 6 above done; placeholder public key replaced and committed.
+- [ ] Tag pushed on a machine you trust; the job is green; the draft has 6 assets: `Interline.app.tar.gz`, `.sig`, `Interline_<version>_aarch64.dmg`, `latest.json`, `install.sh`, `SHA256SUMS`.
+- [ ] On a second Mac: `curl -fsSL <draft asset url>/install.sh -o install.sh && less install.sh && sh install.sh` ends with "Installed" and the app opens (a draft is not public: download the assets with `gh release download`).
+- [ ] `codesign -d -r- /Applications/Interline.app` shows `identifier "app.interline.desktop" and certificate leaf = H"<sha1>"`.
+- [ ] Grant microphone and system audio, quit, install the next build over it: no new prompt (ADR-004 spike cell, still [to verify] for the updater and install script).
+- [ ] Publish the draft. Put the SHA-256 fingerprint in the release notes and README.
+- [ ] Release N+1: Settings > Privacy and data > "Check for updates" finds it, installs after the second click, and the app restarts [to verify end to end on an unnotarized build].
+
+## Certificate rotation (expiry or leak)
+
+1. Repeat steps 1 to 3 and 5 with a new identity (new common name or the same). Update `MACOS_SIGNING_P12_*` and `INTERLINE_CERT_SHA256`.
+2. Ship the next release; every user gets one new microphone and system-audio prompt, because the designated requirement changes. Say so in the release notes and publish the new fingerprint.
+3. A leaked key cannot be revoked (there is no CA). Publish the new fingerprint, warn users and delete the old release assets. The updater key is independent: rotate it the same way (step 4) and note that apps built with the old public key can no longer verify updates, so they need a manual install.
+
+## Contributors
+
+`make signing-identity` (once) creates a local identity "Interline Dev Signing" in its own keychain `~/Library/Keychains/interline-dev.keychain-db`; it never touches the login keychain. `make install` builds, signs with it and copies the app to `~/Applications`. Delete it with `security delete-keychain ~/Library/Keychains/interline-dev.keychain-db`.
+
+## Local checks
+
+`scripts/package/test-install.sh` runs the `install.sh` and `sign-macos.sh` tests offline with a throwaway identity in a temporary keychain that is deleted on exit.

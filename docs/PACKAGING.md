@@ -178,3 +178,7 @@ The current Rust total is **500 physical lines, including all tests**: `main.rs`
 | `pnpm tauri dev --no-watch` under the shared lock | PASS, development overrides honored, invalid JVM injection removed, READY reached; CLI and Vite stopped |
 
 The first default `./mvnw -B verify` attempt reported AC16 plus a boot-time 404 timeout in `M2EnhanceTest`. The serialized all-other verification above reran that class (37 cases) and the entire gate successfully. Counts here come from Maven's per-phase aggregate log summaries, because subsequent targeted tests overwrite some JUnit XML files; the initial M4-A count above is corrected on the same basis. No test assertion or timeout was relaxed.
+
+## Release signing (M4-B)
+
+`scripts/package/sign-macos.sh` re-signs the app inside-out with a project identity (`SIGN_IDENTITY`, optional `SIGN_KEYCHAIN`), an explicit designated requirement `identifier "<id>" and certificate leaf = H"<sha1>"` per binary, and the entitlements in `scripts/package/entitlements/`. It fails if any Mach-O is unsigned or lacks the DR and then runs `codesign --verify --deep --strict`. Hardened runtime is off by default (ADR-014). The release procedure is in [RELEASE.md](RELEASE.md); `scripts/package/test-install.sh` tests it with a throwaway identity.
