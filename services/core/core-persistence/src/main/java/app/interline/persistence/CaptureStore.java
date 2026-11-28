@@ -34,14 +34,16 @@ public final class CaptureStore {
                     .query(Long.class).single() > 0;
             if (exists) {
                 int opened = db.sql("UPDATE meetings SET status = 'recording', started_at = COALESCE(started_at, ?), "
-                        + "ended_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
+                        + "ended_at = NULL, audio_purge_at = NULL, audio_dir = 'audio/' || id, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
                         .params(nowMs, nowMs, meetingId).update();
-                if (opened == 0 || db.sql("SELECT count(*) FROM capture_runs WHERE meeting_id = ?")
+                if (opened == 0) throw new IllegalStateException("meeting is in trash");
+                if (db.sql("SELECT count(*) FROM capture_runs WHERE meeting_id = ?")
                         .param(meetingId).query(Long.class).single() > 0) return null;
             } else {
                 db.sql("INSERT INTO meetings(id, status, started_at, created_at, updated_at) VALUES (?, 'recording', ?, ?, ?)")
                         .params(meetingId, nowMs, nowMs, nowMs).update();
             }
+            db.sql("UPDATE meetings SET audio_dir = 'audio/' || id WHERE id = ?").param(meetingId).update();
             for (StreamKind stream : StreamKind.values()) {
                 db.sql("INSERT INTO speakers(id, meeting_id, source, label) VALUES (?, ?, ?, ?)")
                         .params(UuidV7.next(nowMs), meetingId, stream.wireName(), stream.speakerLabel()).update();
@@ -77,9 +79,19 @@ public final class CaptureStore {
     }
 
     public void setStatus(String meetingId, MeetingStatus status, long nowMs) {
-        boolean terminal = status == MeetingStatus.DONE || status == MeetingStatus.FAILED;
-        database.write(db -> db.sql("UPDATE meetings SET status = ?, updated_at = ?, ended_at = CASE WHEN ? THEN ? ELSE ended_at END WHERE id = ?")
-                .params(status.dbValue(), nowMs, terminal, nowMs, meetingId).update());
+        setStatus(meetingId, status, nowMs, status == MeetingStatus.DONE);
+    }
+
+    /** A timeout or agent loss is not proof of transcription: -1 waits for successful recovery. */
+    public void setStatus(String meetingId, MeetingStatus status, long nowMs, boolean transcribed) {
+        boolean terminal = status == MeetingStatus.DONE || status == MeetingStatus.FAILED || status == MeetingStatus.RECOVERED;
+        database.write(db -> db.sql("UPDATE meetings SET status = ?, updated_at = ?, "
+                + "ended_at = CASE WHEN ? THEN ? ELSE ended_at END, "
+                + "audio_purge_at = CASE WHEN ? THEN CASE COALESCE((SELECT value FROM settings WHERE key = 'audio.retention'),'7d') "
+                + "WHEN 'forever' THEN NULL WHEN 'after_transcription' THEN ? WHEN '30d' THEN ? ELSE ? END ELSE audio_purge_at END "
+                + "WHERE id = ?")
+                .params(status.dbValue(), nowMs, terminal, nowMs, terminal, transcribed ? nowMs : -1L,
+                        nowMs + 30 * 86_400_000L, nowMs + 7 * 86_400_000L, meetingId).update());
     }
 
     public void setLanguage(String meetingId, String language) {
@@ -112,7 +124,7 @@ public final class CaptureStore {
                 .param(meetingId).query(Long.class).single());
     }
 
-    /** Store a final segment once per (meeting, stream, seg). Returns false for a duplicate delivery. */
+    /** Store a final segment once per (meeting, stream, seg). Returns false for a duplicate delivery or after permanent deletion starts. */
     public boolean insertFinal(String meetingId, StreamKind stream, String seg, long startSample, long endSample,
                                String text, String model, Double avgLogprob) {
         return insertFinal(meetingId, stream, seg, startSample, endSample, text, model, avgLogprob, false);
@@ -121,9 +133,10 @@ public final class CaptureStore {
     public boolean insertFinal(String meetingId, StreamKind stream, String seg, long startSample, long endSample,
                                String text, String model, Double avgLogprob, boolean recovered) {
         return database.write(db -> {
-            String speakerId = db.sql("SELECT id FROM speakers WHERE meeting_id = ? AND source = ?")
+            String speakerId = db.sql("SELECT s.id FROM speakers s JOIN meetings m ON m.id = s.meeting_id WHERE s.meeting_id = ? AND s.source = ? AND m.deletion_started_at IS NULL")
                     .params(meetingId, stream.wireName()).query(String.class).optional()
-                    .orElseThrow(() -> new IllegalStateException("unknown meeting " + meetingId));
+                    .orElse(null);
+            if (speakerId == null) return false;
             int inserted = db.sql("INSERT OR IGNORE INTO transcript_segments(meeting_id, speaker_id, agent_seg, start_ms, end_ms, text, avg_logprob, model, recovered) "
                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
                     .params(meetingId, speakerId, seg, startSample / SAMPLES_PER_MS,
@@ -182,7 +195,13 @@ public final class CaptureStore {
     }
 
     public void completeRecoveryJob(String jobId) {
-        database.write(db -> db.sql("UPDATE recovery_jobs SET done = 1 WHERE id = ?").params(jobId).update());
+        database.write(db -> {
+            db.sql("UPDATE recovery_jobs SET done = 1 WHERE id = ?").param(jobId).update();
+            return db.sql("UPDATE meetings SET audio_purge_at = ? WHERE audio_purge_at = -1 "
+                    + "AND id = (SELECT meeting_id FROM recovery_jobs WHERE id = ?) "
+                    + "AND NOT EXISTS (SELECT 1 FROM recovery_jobs WHERE meeting_id = meetings.id AND done = 0)")
+                    .params(System.currentTimeMillis(),jobId).update();
+        });
     }
 
     public int gapMarkerCount(String meetingId) {

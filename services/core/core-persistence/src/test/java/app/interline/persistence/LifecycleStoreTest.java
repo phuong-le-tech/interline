@@ -1,0 +1,232 @@
+package app.interline.persistence;
+
+import app.interline.domain.MeetingStatus;
+import app.interline.domain.StreamKind;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashSet;
+import static org.assertj.core.api.Assertions.*;
+
+class LifecycleStoreTest {
+    @TempDir Path data;
+    static final long DAY = 86_400_000L;
+
+    @Test void everyRetentionPolicyPurgesOnlyDueAudioAndPreservesText() throws Exception {
+        for (String value : new String[]{"after_transcription", "7d", "30d", "forever"}) {
+            Path root = data.resolve(value);
+            try (var db = SqliteDatabase.open(root.resolve("db"))) {
+                var settings = new SettingsStore(db);
+                var capture = new CaptureStore(db);
+                var audio = new AudioStore(root.resolve("audio"));
+                var lifecycle = new LifecycleStore(db,root);
+                assertThat(settings.audioRetention()).isEqualTo("7d");
+                settings.setAudioRetention(value,0);
+                capture.createMeeting("due",0);
+                audio.write("due",StreamKind.MIC,0,new byte[2],new HashSet<>());
+                capture.insertFinal("due",StreamKind.MIC,"s",0,16,"original transcript","test",null);
+                db.write(c -> c.sql("INSERT INTO note_blocks(id,meeting_id,position,kind,origin,content,plain_text,created_at,updated_at) VALUES ('note','due','a','paragraph','user','original notes','original notes',0,0)").update());
+                capture.setStatus("due",MeetingStatus.DONE,DAY);
+                capture.createMeeting("future",0);
+                audio.write("future",StreamKind.MIC,0,new byte[2],new HashSet<>());
+                capture.setStatus("future",MeetingStatus.DONE,1000 * DAY);
+                if (value.equals("forever")) {
+                    assertThat(deadline(db,"due")).isNull();
+                    lifecycle.purgeAudio(365 * DAY);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isTrue();
+                } else {
+                    long due = switch (value) { case "after_transcription" -> DAY; case "7d" -> 8 * DAY; default -> 31 * DAY; };
+                    assertThat(deadline(db,"due")).isEqualTo(due);
+                    lifecycle.purgeAudio(due - 1);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isTrue();
+                    lifecycle.purgeAudio(due);
+                    lifecycle.purgeAudio(due);
+                    assertThat(Files.exists(root.resolve("audio/due"))).isFalse();
+                }
+                assertThat(Files.exists(root.resolve("audio/future"))).isTrue();
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM transcript_segments WHERE text='original transcript'").query(Integer.class).single())).isEqualTo(1);
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM note_blocks WHERE plain_text='original notes'").query(Integer.class).single())).isEqualTo(1);
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM meetings WHERE audio_dir IS NOT NULL").query(Integer.class).single())).isEqualTo(value.equals("forever") ? 2 : 1);
+            }
+        }
+    }
+
+    @Test void unconfirmedTranscriptionKeepsAudioAndResumingCancelsTheDeadline() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            new SettingsStore(db).setAudioRetention("after_transcription",0);
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            capture.createMeeting("a",0);
+            Files.createDirectories(data.resolve("audio/a"));
+            Files.writeString(data.resolve("audio/a/part.pcm"),"test");
+            capture.setStatus("a",MeetingStatus.DONE,1,false);
+            lifecycle.purgeAudio(DAY);
+            assertThat(Files.exists(data.resolve("audio/a/part.pcm"))).isTrue();
+            capture.createMeeting("a",2);
+            capture.setStatus("a",MeetingStatus.DONE,3,true);
+            capture.createMeeting("a",4);
+            lifecycle.purgeAudio(DAY);
+            assertThat(Files.exists(data.resolve("audio/a/part.pcm"))).isTrue();
+            assertThat(lifecycle.trash("a",5)).isFalse();
+        }
+    }
+
+    @Test void trashRestoresAndHardDeleteCascadesOnlyItsOwnRowsAndFiles() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db, data);
+            for (String id : new String[]{"a", "b"}) {
+                capture.createMeeting(id, 0);
+                capture.insertFinal(id, StreamKind.MIC, "s", 0, 16, "unique transcript", "test", null);
+                capture.setStatus(id, MeetingStatus.DONE, 1);
+                Files.createDirectories(data.resolve("audio/" + id));
+                Files.writeString(data.resolve("audio/" + id + "/part.pcm"), "test");
+                Files.createDirectories(data.resolve("recovery/" + id));
+                Files.writeString(data.resolve("recovery/" + id + "/part.wav"), "recovered");
+                Files.createDirectories(data.resolve("spool/" + id));
+                Files.writeString(data.resolve("spool/" + id + "/part.pcm"), "rescue");
+                db.write(c -> {
+                    c.sql("INSERT INTO ai_runs(id,meeting_id,kind,model,prompt_version,status,started_at) VALUES (?,?,'brief','test','1','ok',0)").params(id,id).update();
+                    c.sql("INSERT INTO briefs(id,meeting_id,text,input_hash,ai_run_id,created_at) VALUES (?,?,'[]','hash',?,0)").params(id,id,id).update();
+                    c.sql("INSERT INTO note_blocks(id,meeting_id,position,kind,origin,content,plain_text,created_at,updated_at) VALUES (?,?,'a','paragraph','user','unique notes','unique notes',0,0)").params(id,id).update();
+                    c.sql("INSERT INTO action_items(id,meeting_id,text,created_at) VALUES (?,?,'action',0)").params(id,id).update();
+                    c.sql("INSERT INTO people(id,display_name,created_at) VALUES (?, 'Person',0)").param(id).update();
+                    return c.sql("INSERT INTO meeting_participants VALUES (?,?)").params(id,id).update();
+                });
+            }
+            lifecycle.trash("a", 10);
+            assertThat(capture.findMeeting("a")).isEmpty();
+            assertThat(lifecycle.trash()).extracting(LifecycleStore.Trashed::id).containsExactly("a");
+            assertThat(lifecycle.restore("a", 20)).isTrue();
+            assertThat(capture.findMeeting("a")).isPresent();
+            lifecycle.trash("a", 30);
+            lifecycle.purgeTrash(30 * DAY + 30);
+            assertThat(lifecycle.trash()).hasSize(1);
+            lifecycle.purgeTrash(30 * DAY + 31);
+            lifecycle.hardDelete("a");
+            for (String table : new String[]{"meetings", "capture_runs", "speakers", "transcript_segments", "note_blocks", "ai_runs", "action_items", "briefs", "meeting_participants"}) {
+                String column = table.equals("meetings") ? "id" : "meeting_id";
+                assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM " + table + " WHERE " + column + " = 'a'").query(Integer.class).single())).as(table).isZero();
+            }
+            assertThat(Files.exists(data.resolve("audio/a"))).isFalse();
+            assertThat(Files.exists(data.resolve("spool/a"))).isFalse();
+            assertThat(Files.exists(data.resolve("recovery/a"))).isFalse();
+            assertThat(Files.exists(data.resolve("audio/b/part.pcm"))).isTrue();
+            assertThat(new SearchStore(db).search("unique")).allMatch(hit -> hit.meetingId().equals("b")).hasSize(2);
+        }
+    }
+
+    @Test void traversalAndSymlinksCannotDeleteAnotherMeetingAndFailedDeleteCannotRestore() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db, data);
+            Files.createDirectories(data.resolve("audio/b"));
+            Path keep = data.resolve("audio/b/keep");
+            Files.writeString(keep, "keep");
+            for (String id : new String[]{"../b", "a"}) {
+                capture.createMeeting(id, 0);
+                capture.setStatus(id, MeetingStatus.DONE, 1);
+                lifecycle.trash(id, 2);
+            }
+            Files.createSymbolicLink(data.resolve("audio/a"), data.resolve("audio/b"));
+            assertThatThrownBy(() -> lifecycle.hardDelete("../b")).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> lifecycle.hardDelete("a")).isInstanceOf(RuntimeException.class);
+            assertThat(lifecycle.restore("a", 3)).isFalse();
+            assertThat(capture.findMeeting("a")).isEmpty();
+            assertThat(Files.readString(keep)).isEqualTo("keep");
+            Files.delete(data.resolve("audio/a"));
+            lifecycle.hardDelete("a");
+            assertThat(lifecycle.trash()).extracting(LifecycleStore.Trashed::id).doesNotContain("a");
+        }
+    }
+    @Test void oneFailedAudioRemovalDoesNotPreventOtherDueMeetingsFromPurging() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            for (String id : new String[]{"a","b"}) {
+                capture.createMeeting(id,0);
+                capture.setStatus(id,MeetingStatus.DONE,1);
+            }
+            Files.createDirectories(data.resolve("audio/b"));
+            Files.writeString(data.resolve("audio/b/part.pcm"),"test");
+            Files.createSymbolicLink(data.resolve("audio/a"),data.resolve("audio/b"));
+            assertThatThrownBy(() -> lifecycle.purgeAudio(8 * DAY)).isInstanceOf(RuntimeException.class);
+            assertThat(Files.exists(data.resolve("audio/b/part.pcm"))).isFalse();
+            assertThat(db.<Integer>read(c -> c.sql("SELECT count(*) FROM meetings WHERE id='a' AND audio_dir IS NOT NULL").query(Integer.class).single())).isEqualTo(1);
+        }
+    }
+
+    @Test void recoveredMeetingsCanBeDeletedEvenWhenTranscriptionCannotFinish() {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            capture.createMeeting("a",0);
+            capture.setStatus("a",MeetingStatus.RECOVERED,1);
+            capture.addRecoveryJob(new CaptureStore.RecoveryJob("job","a",StreamKind.MIC,"unused",0));
+            assertThat(lifecycle.trash("a",2)).isTrue();
+            assertThat(capture.pendingRecoveryJobs()).hasSize(1);
+            assertThat(capture.insertFinal("a",StreamKind.MIC,"late",0,16,"late transcript","test",null,true)).isTrue();
+            assertThat(lifecycle.restore("a",3)).isTrue();
+            assertThat(capture.pendingRecoveryJobs()).hasSize(1);
+            lifecycle.trash("a",4);
+            lifecycle.hardDelete("a");
+            assertThat(capture.insertFinal("a",StreamKind.MIC,"late",0,16,"late transcript","test",null,true)).isFalse();
+        }
+    }
+
+    @Test void settingChangesOnlyExtendScheduledUnpurgedDeadlines() throws Exception {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            var settings = new SettingsStore(db);
+            var lifecycle = new LifecycleStore(db,data);
+            capture.createMeeting("scheduled",0);
+            capture.setStatus("scheduled",MeetingStatus.DONE,DAY);
+            Files.createDirectories(data.resolve("audio/scheduled"));
+            Files.writeString(data.resolve("audio/scheduled/0.pcm"),"keep");
+            settings.setAudioRetention("forever",7 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+            lifecycle.purgeAudio(8 * DAY);
+            assertThat(Files.exists(data.resolve("audio/scheduled/0.pcm"))).isTrue();
+            settings.setAudioRetention("7d",8 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+            capture.createMeeting("extended",0);
+            capture.setStatus("extended",MeetingStatus.DONE,DAY);
+            settings.setAudioRetention("30d",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            settings.setAudioRetention("7d",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            settings.setAudioRetention("after_transcription",7 * DAY);
+            assertThat(deadline(db,"extended")).isEqualTo(31 * DAY);
+            assertThat(deadline(db,"scheduled")).isNull();
+        }
+    }
+
+    private static Long deadline(SqliteDatabase db,String id) {
+        return db.read(c -> c.sql("SELECT audio_purge_at FROM meetings WHERE id=?").param(id).query((rs,n) -> {
+            Object value = rs.getObject(1); return value == null ? null : ((Number)value).longValue();
+        }).list().get(0));
+    }
+
+    @Test void hardAndScheduledTrashDeletionNeverHoldTheDatabaseMonitorWhileDeletingFiles() {
+        try (var db = SqliteDatabase.open(data.resolve("db"))) {
+            var capture = new CaptureStore(db);
+            for (String id : new String[]{"a","b","c"}) {
+                capture.createMeeting(id,0); capture.setStatus(id,MeetingStatus.DONE,1);
+            }
+            var removed = new java.util.ArrayList<String>();
+            var lifecycle = new LifecycleStore(db,id -> {
+                assertThat(Thread.holdsLock(db)).as("file deletion must not hold the capture database monitor").isFalse();
+                capture.setLanguage("b","fr");
+                removed.add(id);
+            });
+            lifecycle.trash("a",2); lifecycle.trash("c",2);
+            lifecycle.hardDelete("a");
+            lifecycle.purgeTrash(31 * DAY);
+            assertThat(removed).containsExactly("a","c");
+            assertThat(capture.language("b")).isEqualTo("fr");
+            assertThat(capture.findMeeting("b")).isPresent();
+        }
+    }
+
+}

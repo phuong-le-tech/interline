@@ -18,6 +18,8 @@ import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
 import { Today } from './Today';
 import { Consent } from './Consent';
+import { PrivacyData } from './settings/PrivacyData';
+import { DeleteConfirmation } from './settings/DeleteConfirmation';
 import { trayState } from './trayState';
 
 const SLOW_START_MS = 1500;
@@ -40,13 +42,15 @@ export function App() {
   const [banners, setBanners] = useState<Partial<Record<PermissionKind, string>>>({});
   const [state, setState] = useState('idle');
   const [error, setError] = useState<string>();
-  const [view, setView] = useState<'live' | 'models' | 'notes'>('live');
+  const [view, setView] = useState<'live' | 'models' | 'notes' | 'privacy'>('live');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>();
   const [highlightedSegmentId, setHighlightedSegmentId] = useState<number | undefined>();
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
   const [consentMeetingId, setConsentMeetingId] = useState<string | null>();
+  const [deleting, setDeleting] = useState<Meeting>();
+  const privacyButton = useRef<HTMLButtonElement>(null);
   const preparingRecording = useRef(false);
 
   useEffect(() => {
@@ -266,6 +270,9 @@ export function App() {
         <button type="button" onClick={stop} disabled={!client || state !== 'recording'}>Stop</button>
         <button type="button" onClick={() => setView(view === 'models' ? 'live' : 'models')}>Models</button>
         <button type="button" onClick={() => setPaletteOpen(true)}>Search</button>
+        <button ref={privacyButton} type="button" disabled={!client} onClick={() => {
+          if (view === 'privacy') { setView('live'); privacyButton.current?.focus(); } else setView('privacy');
+        }}>{view === 'privacy' ? 'Back to meetings' : 'Privacy and data'}</button>
         <p role="status">{status}</p>
         <Meters levels={levels} />
       </div>
@@ -283,7 +290,9 @@ export function App() {
           <button type="button" onClick={() => setUpcoming(undefined)}>Dismiss</button>
         </p>
       )}
-      {view === 'models' ? (
+      {view === 'privacy' && client ? (
+        <PrivacyData client={client} onChanged={() => { void refreshMeetings(client); }} />
+      ) : view === 'models' ? (
         <Models models={models} onDownload={(id) => void download(id)} />
       ) : view === 'notes' && selectedMeetingId ? (
         <Notes client={client!} meetingId={selectedMeetingId} coreAlive={coreAlive} highlightedSegmentId={highlightedSegmentId} />
@@ -305,12 +314,18 @@ export function App() {
                 {meeting.title || meeting.id.slice(0, 8)} - {meeting.status}{' '}
                 <button type="button" className="link" onClick={() => openMeetingNotes(meeting.id)} aria-label="Open notes">
                   notes
-                </button>
+                </button>{' '}
+                <button type="button" disabled={busy} aria-label={`Delete ${meeting.title || 'Untitled meeting'}`} onClick={() => setDeleting(meeting)}>Delete</button>
               </li>
             ))}
           </ul>
         </>
       )}
+      {deleting && client && <DeleteConfirmation title={deleting.title || 'Untitled meeting'} permanent={false} onCancel={() => setDeleting(undefined)} onConfirm={async () => {
+        await client.deleteMeeting(deleting.id);
+        if (selectedMeetingId === deleting.id) setSelectedMeetingId(undefined);
+        await refreshMeetings(client); setDeleting(undefined); requestAnimationFrame(() => privacyButton.current?.focus());
+      }} />}
       {paletteOpen && client && (
         <Palette
           client={client}

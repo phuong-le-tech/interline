@@ -1,6 +1,7 @@
 /* Functional and rough on purpose: DESIGN-SYSTEM polish is M2. Brick is reserved for live recording. */
 :root {
   --signal: #a6402f;
+  --ochre: #A87A2C;
   --muted: #5c5c5c;
   font-family: system-ui, sans-serif;
 }

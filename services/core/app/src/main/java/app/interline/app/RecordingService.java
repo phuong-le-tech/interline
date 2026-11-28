@@ -270,7 +270,7 @@ public class RecordingService implements CaptureListener {
     @Override public synchronized void sessionStopped(String sessionId) {
         if (active == null || !active.id.equals(sessionId) || active.status != MeetingStatus.PROCESSING) return;
         flushAcks();
-        finish(MeetingStatus.DONE, "stopped");
+        finish(MeetingStatus.DONE, "stopped", true);
     }
 
     // ---- internals ----------------------------------------------------------------------------------------
@@ -407,11 +407,13 @@ public class RecordingService implements CaptureListener {
         events.publish("recording.state", Map.of("meetingId", active.id, "state", status.dbValue()));
     }
 
-    private void finish(MeetingStatus terminal, String endReason) {
+    private void finish(MeetingStatus terminal, String endReason) { finish(terminal, endReason, false); }
+
+    private void finish(MeetingStatus terminal, String endReason, boolean transcribed) {
         Meeting meeting = active;
         store.endRun(meeting.id, endReason, clock.millis());
         meeting.status = terminal;
-        store.setStatus(meeting.id, terminal, clock.millis());
+        store.setStatus(meeting.id, terminal, clock.millis(), transcribed);
         events.publish("recording.state", Map.of("meetingId", meeting.id, "state", terminal.dbValue()));
         active = null;
         meeting.finished.countDown();
