@@ -1,17 +1,102 @@
 name: Release
 
+# Pushing a tag v* builds, signs and uploads a DRAFT release. Nothing is published automatically:
+# the maintainer reviews the draft and publishes it by hand. Secrets and the one-time setup: docs/RELEASE.md.
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   macos:
     runs-on: macos-latest
+    permissions:
+      contents: write # create the draft release
+    env:
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Placeholder
-        run: echo "macOS bundle job placeholder"
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12.16.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - name: Refuse a release with placeholders
+        run: |
+          grep -q 'REPLACE_WITH' apps/desktop/src-tauri/tauri.conf.json && { echo 'tauri.conf.json still has the placeholder updater public key (docs/RELEASE.md)'; exit 1; }
+          [ -n "$CERT_SHA256" ] || { echo 'repository variable INTERLINE_CERT_SHA256 is not set (docs/RELEASE.md)'; exit 1; }
+        env:
+          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
+      - name: Import the signing identity into a temporary keychain
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/interline-release.keychain-db"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          KC_PW=$(uuidgen)
+          echo "::add-mask::$KC_PW"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          security create-keychain -p "$KC_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/identity.p12"
+      - name: Build
+        run: scripts/package/build.sh
+      - name: Sign inside-out and check the pinned certificate
+        env:
+          SIGN_IDENTITY: ${{ vars.INTERLINE_SIGNING_IDENTITY }}
+          SIGN_KEYCHAIN: ${{ env.KEYCHAIN }}
+          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
+        run: |
+          app=apps/desktop/src-tauri/target/release/bundle/macos/Interline.app
+          scripts/package/sign-macos.sh "$app"
+          cd "$RUNNER_TEMP" && mkdir cert && cd cert && codesign -d --extract-certificates "$GITHUB_WORKSPACE/$app" 2>/dev/null
+          found=$(openssl x509 -inform DER -noout -fingerprint -sha256 -in codesign0 | sed 's/.*=//' | tr -d ':')
+          want=$(printf '%s' "$CERT_SHA256" | tr -d ':' | tr 'a-f' 'A-F')
+          [ "$found" = "$want" ] || { echo "signed with $found, expected $want"; exit 1; }
+      - name: Package release assets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
+        run: |
+          out="$RUNNER_TEMP/release"; mkdir -p "$out"
+          app=apps/desktop/src-tauri/target/release/bundle/macos/Interline.app
+          version=${TAG#v}
+          # Tarball and DMG are made after the last codesign call.
+          COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -czf "$out/Interline.app.tar.gz" Interline.app
+          (cd apps/desktop && pnpm install --frozen-lockfile && pnpm tauri signer sign "$out/Interline.app.tar.gz")
+          dmg_root=$(mktemp -d); ditto "$app" "$dmg_root/Interline.app"; ln -s /Applications "$dmg_root/Applications"
+          hdiutil create -ov -format UDZO -volname Interline -srcfolder "$dmg_root" "$out/Interline_${version}_aarch64.dmg"
+          scripts/package/render-install.sh "$CERT_SHA256" > "$out/install.sh"
+          scripts/package/make-latest-json.sh "$version" "$GITHUB_REPOSITORY" "$TAG" "$out/Interline.app.tar.gz.sig" > "$out/latest.json"
+          (cd "$out" && shasum -a 256 Interline.app.tar.gz "Interline_${version}_aarch64.dmg" install.sh latest.json > SHA256SUMS)
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
+        run: |
+          gh release create "$TAG" --draft --verify-tag --title "Interline $TAG" \
+            --notes "Draft. Signing certificate SHA-256: $CERT_SHA256. Not notarized: see install.sh or the Open Anyway steps." \
+            "$RUNNER_TEMP"/release/*
+      - name: Delete the temporary keychain
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/identity.p12"
 
   windows:
     runs-on: windows-latest
