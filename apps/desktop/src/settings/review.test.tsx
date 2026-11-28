@@ -39,3 +39,18 @@ it('retains the typed private ICS address after a failed connection', async () =
   expect(await screen.findByRole('alert')).toBeVisible();
   expect(field).toHaveValue('https://example.com/private.ics');
 });
+
+it('keeps an existing provider when saving its replacement key fails', async () => {
+  const client = new CoreClient({ port: 1, token: 'sk-test-review' });
+  vi.spyOn(client, 'providers').mockResolvedValue([{ ...provider, has_key: true }]);
+  vi.spyOn(client, 'updateProvider').mockResolvedValue(provider);
+  vi.spyOn(client, 'saveProviderKey').mockRejectedValue(new Error('Offline'));
+  vi.spyOn(client, 'deleteProvider').mockResolvedValue();
+  render(<Providers client={client} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+  fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-test-replacement' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByRole('alert')).toBeVisible();
+  expect(client.updateProvider).toHaveBeenCalledOnce();
+  expect(client.deleteProvider).not.toHaveBeenCalled();
+});
