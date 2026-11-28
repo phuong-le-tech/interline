@@ -163,7 +163,7 @@ export const en = {
   "test_inputs": "Test both inputs",
   "play_sound": "Play test sound",
   "sound_played": "Test sound played. Check the Them meter while testing inputs.",
-  "audio_test_description": "Testing starts a normal recording with the consent reminder. Speak and play the test sound, check both meters, then Stop. The test meeting stays in your meetings until you delete it.",
+  "audio_test_description": "Testing starts a temporary recording with the consent reminder. Speak and play the test sound, check both meters, then Stop. The temporary meeting, audio and transcript are permanently deleted when you stop or leave this screen.",
   "ram_detected": "Detected memory: {size}. Recommended: {name}.",
   "ram_unknown": "Memory unavailable. Start with the smallest speech model.",
   "smaller_model": "Not enough space? Choose the smaller model: {name} ({size}).",

@@ -165,7 +165,7 @@ export const fr = {
   "test_inputs": "Tester les deux entrées",
   "play_sound": "Jouer le son de test",
   "sound_played": "Son de test joué. Vérifiez le niveau Les autres pendant le test des entrées.",
-  "audio_test_description": "Le test démarre un enregistrement avec le rappel de consentement. Parlez et jouez le son de test, vérifiez les deux niveaux, puis arrêtez. La réunion de test reste dans votre liste jusqu’à sa suppression.",
+  "audio_test_description": "Le test démarre un enregistrement temporaire avec le rappel de consentement. Parlez et jouez le son de test, vérifiez les deux niveaux, puis arrêtez. La réunion temporaire, son audio et sa transcription sont définitivement supprimés à l’arrêt ou lorsque vous quittez cet écran.",
   "ram_detected": "Mémoire détectée : {size}. Modèle recommandé : {name}.",
   "ram_unknown": "Mémoire inconnue. Commencez par le plus petit modèle de transcription.",
   "smaller_model": "Espace insuffisant ? Choisissez le modèle plus petit : {name} ({size}).",

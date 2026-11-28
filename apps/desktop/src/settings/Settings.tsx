@@ -12,7 +12,7 @@ import { CalendarSettings } from './CalendarSettings';
 const sections = ['general', 'audio', 'transcription', 'ai', 'calendar', 'privacy', 'storage', 'about'] as const;
 type Section = typeof sections[number];
 export type SettingsProps = { client: CoreClient; models: ModelView[]; onDownload: (id: string) => void;
-  levels: Levels; active: boolean; onRecord: () => void; onStop: () => void; onChanged: () => void };
+  levels: Levels; active: boolean; onTestDisposed: (id: string) => void; onError: (error: unknown) => void; onChanged: () => void };
 
 export function Settings(props: SettingsProps) {
   const { client } = props;

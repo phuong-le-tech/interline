@@ -61,6 +61,7 @@ export function App() {
   const settingsButton = useRef<HTMLButtonElement>(null);
   const preparingRecording = useRef(false);
   const resumableDownloads = useRef(new Set<string>());
+  const recordingMeeting = useRef('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,6 +102,7 @@ export function App() {
       const data = event.data;
       switch (event.name) {
         case 'recording.state':
+          recordingMeeting.current = text(data.meetingId);
           setState(text(data.state));
           if (data.state !== 'recording' && data.state !== 'degraded') setLevels(SILENT_LEVELS);
           void refreshMeetings(client);
@@ -299,6 +301,11 @@ export function App() {
     setView('notes');
   };
 
+  const audioTestDisposed = (id: string) => {
+    if (recordingMeeting.current === id) setTranscript(EMPTY_TRANSCRIPT);
+    if (client) void refreshMeetings(client).catch(setError);
+  };
+
   return (
     <main>
       <h1>Interline</h1>
@@ -330,11 +337,11 @@ export function App() {
       )}
       {client && preferences && !preferences.onboarding_done ? (
         <Onboarding client={client} models={models} onDownload={(id) => { void download(id); }} levels={levels} active={busy}
-          onRecord={() => { void record(); }} onStop={() => { void stop(); }} onChanged={() => { void refreshMeetings(client); }}
+          onTestDisposed={audioTestDisposed} onError={setError} onChanged={() => { void refreshMeetings(client); }}
           onComplete={() => setPreferences({ ...preferences, onboarding_done: true })} />
       ) : view === 'settings' && client ? (
         <Settings client={client} models={models} onDownload={(id) => { void download(id); }} levels={levels} active={busy}
-          onRecord={() => { void record(); }} onStop={() => { void stop(); }} onChanged={() => { void refreshMeetings(client); }} />
+          onTestDisposed={audioTestDisposed} onError={setError} onChanged={() => { void refreshMeetings(client); }} />
       ) : view === 'models' ? (
         <Models models={models} onDownload={(id) => void download(id)} />
       ) : view === 'notes' && selectedMeetingId ? (

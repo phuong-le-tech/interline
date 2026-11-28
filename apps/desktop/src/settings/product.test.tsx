@@ -16,7 +16,7 @@ function props(): SettingsProps {
   vi.spyOn(client, 'icsSource').mockResolvedValue({ configured: false });
   vi.spyOn(client, 'providers').mockResolvedValue([]);
   vi.spyOn(client, 'saveUiPreferences').mockResolvedValue({ onboarding_done: true, language: 'en' });
-  return { client, models: [], onDownload: vi.fn(), levels: { mic: 0, system: 0 }, active: false, onRecord: vi.fn(), onStop: vi.fn(), onChanged: vi.fn() };
+  return { client, models: [], onDownload: vi.fn(), levels: { mic: 0, system: 0 }, active: false, onTestDisposed: vi.fn(), onError: vi.fn(), onChanged: vi.fn() };
 }
 
 describe('onboarding and settings accessible controls', () => {
