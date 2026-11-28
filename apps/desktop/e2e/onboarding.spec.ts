@@ -105,3 +105,35 @@ test('all settings sections are keyboard reachable and language changes home, no
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
 });
+
+test('provider settings create, edit and test a connection without reading the key back', async ({ page, stacks }) => {
+  const stack = await stacks();
+  expect(stack.coreReady, stack.diagnostics()).toBe(true);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  const providers = page.getByRole('region', { name: 'Providers', exact: true });
+  await providers.getByLabel('Provider name', { exact: true }).fill('Local test provider');
+  await providers.getByLabel('Base URL', { exact: true }).fill(stack.model!.baseUrl);
+  await providers.getByLabel('Model', { exact: true }).fill('stub-model');
+  await providers.getByLabel('API key', { exact: true }).fill('sk-test-m4-write-only');
+  const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().endsWith('/key'));
+  await providers.getByRole('button', { name: 'Save', exact: true }).click();
+  expect((await saved).status()).toBe(204);
+  await expect(providers.getByLabel('API key', { exact: true })).toHaveValue('');
+  await providers.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(providers.getByLabel('API key', { exact: true })).toHaveValue('');
+  await expect(providers).not.toContainText('sk-test-m4-write-only');
+  await providers.getByLabel('Provider name', { exact: true }).fill('Edited provider');
+  await providers.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(providers.getByRole('status')).toHaveText('Saved.');
+  await expect(providers.getByRole('list')).toContainText('Edited provider');
+  await providers.getByRole('list').getByRole('button', { name: 'Test connection', exact: true }).click();
+  await expect(providers.getByRole('status')).toContainText('Connection successful.');
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  await providers.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(providers.getByLabel('API key', { exact: true })).toHaveValue('');
+  await expect(page.locator('body')).not.toContainText('sk-test-m4-write-only');
+});
