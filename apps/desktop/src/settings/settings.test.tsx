@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Retention } from './Retention';
 import { Trash } from './Trash';
 import { Privacy } from './Privacy';
+import { UpdateCheck } from './UpdateCheck';
 import { FileVaultNotice } from './FileVaultNotice';
 
 afterEach(cleanup);
@@ -55,6 +56,26 @@ describe('Privacy and data components', () => {
     expect(screen.getByText(/audio from before this upgrade/i)).toBeVisible();
     expect(screen.getByText(/never shorten/i)).toBeVisible();
     await waitFor(() => expect(screen.getByLabelText('Audio retention')).toBeEnabled());
+  });
+  it('contacts nothing until the user clicks, and installs only after a second click', async () => {
+    const check = vi.fn(async () => '0.2.0'); const install = vi.fn(async () => undefined);
+    render(<UpdateCheck check={check} install={install} />);
+    expect(check).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByText('Version 0.2.0 is available.')).toBeVisible();
+    expect(install).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Install and restart' }));
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+  it('says up to date and reports a failed check', async () => {
+    const { unmount } = render(<UpdateCheck check={async () => null} install={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByText('Interline is up to date.')).toBeVisible();
+    unmount();
+    render(<UpdateCheck check={async () => { throw new Error('offline'); }} install={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('offline');
   });
   it('uses the globally defined ochre token without an inline color fallback', () => {
     render(<FileVaultNotice state="off" />);

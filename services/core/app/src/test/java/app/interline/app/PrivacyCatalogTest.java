@@ -19,6 +19,17 @@ class PrivacyCatalogTest {
         }
         assertThat(clients).as("Declare new network clients and their catalog entries").containsExactlyInAnyOrderElementsOf(PrivacyCatalog.OUTBOUND_CLIENTS.keySet());
     }
+    @Test void everyShellNetworkCrateIsDeclaredAndHitsTheDeclaredHost() throws Exception {
+        var tauri = AppTestSupport.ROOT.resolve("apps/desktop/src-tauri");
+        Set<String> crates = new HashSet<>();
+        for (String line : Files.readAllLines(tauri.resolve("Cargo.toml")))
+            if (line.matches("^(tauri-plugin-updater|reqwest|ureq|hyper|isahc|surf|attohttpc|curl)\\s*=.*")) crates.add(line.split("\\s*=")[0]);
+        assertThat(crates).as("Declare new shell network crates in PrivacyCatalog.OUTBOUND_SHELL_CRATES").containsExactlyInAnyOrderElementsOf(PrivacyCatalog.OUTBOUND_SHELL_CRATES.keySet());
+        var endpoints = new com.fasterxml.jackson.databind.ObjectMapper().readTree(tauri.resolve("tauri.conf.json").toFile()).at("/plugins/updater/endpoints");
+        assertThat(endpoints).isNotEmpty();
+        for (var endpoint : endpoints) assertThat(PrivacyCatalog.host(endpoint.asText())).isEqualTo(PrivacyCatalog.UPDATE_HOST);
+        assertThat(Files.readString(tauri.resolve("capabilities/default.json"))).as("the updater needs no webview permission").doesNotContain("updater");
+    }
     @Test void onlyHostCanLeaveCatalogForCredentialBearingUrls() {
         assertThat(PrivacyCatalog.host("https://user:sk-test-secret@example.com/private-token?key=sk-test-query")).isEqualTo("example.com");
         assertThat(PrivacyCatalog.host("not a url sk-test-secret")).isNull();

@@ -15,5 +15,11 @@
       "csp": "default-src 'self'; connect-src http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY (docs/RELEASE.md, step 4)",
+      "endpoints": ["https://github.com/phuong-le-tech/interline/releases/latest/download/latest.json"]
+    }
+  },
   "bundle": { "active": true, "icon": ["icons/icon.png"], "macOS": { "minimumSystemVersion": "14.2" } }
 }

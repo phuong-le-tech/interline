@@ -4,6 +4,7 @@ import { inTauri, type CoreClient } from '../coreClient';
 import { Retention } from './Retention';
 import { Trash } from './Trash';
 import { Privacy } from './Privacy';
+import { UpdateCheck } from './UpdateCheck';
 import { FileVaultNotice, type FileVaultState } from './FileVaultNotice';
 
 export function PrivacyData({ client, onChanged }: { client: CoreClient; onChanged: () => void }) {
@@ -22,5 +23,6 @@ export function PrivacyData({ client, onChanged }: { client: CoreClient; onChang
     <Retention load={retention} save={(value) => client.setRetention(value)} />
     <Trash load={trash} restore={(id) => client.restoreMeeting(id)} erase={(id) => client.eraseMeeting(id)} onChanged={onChanged} />
     <Privacy load={privacy} />
+    {inTauri() && <UpdateCheck check={() => invoke<string | null>('check_update')} install={() => invoke<void>('install_update')} />}
   </section>;
 }
