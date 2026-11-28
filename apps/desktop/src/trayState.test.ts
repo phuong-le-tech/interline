@@ -19,6 +19,7 @@ vi.mock('./coreClient', async (importOriginal) => {
     waitForEndpoint: vi.fn().mockResolvedValue({ port: 12345, token: 'test' }),
     CoreClient: class {
       meetings = vi.fn().mockResolvedValue([]);
+      uiPreferences = vi.fn().mockResolvedValue({ onboarding_done: true, language: "en" });
       models = vi.fn().mockResolvedValue([]);
       subscribe = vi.fn((listener: (event: CoreEvent) => void) => {
         core.listener = listener;

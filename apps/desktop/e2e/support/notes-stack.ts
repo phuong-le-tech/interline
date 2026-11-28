@@ -105,7 +105,7 @@ export type NotesStack = Awaited<ReturnType<typeof startNotesStack>>;
  * The real core jar (MockAgent behind it), a Vite dev server, a fake model and a forwarder that survives core restarts.
  * Seeds golden meeting 1 straight into the database. Never a fake core.
  */
-export async function startNotesStack(options: { model?: boolean } = {}) {
+export async function startNotesStack(options: { model?: boolean; onboarding?: boolean; denySystemAudio?: boolean } = {}) {
   const scratch = await mkdtemp(join(tmpdir(), 'interline-m2-'));
   const data = join(scratch, 'data');
   const logs = join(scratch, 'logs');
@@ -122,6 +122,7 @@ export async function startNotesStack(options: { model?: boolean } = {}) {
       `--data-dir=${data}`, `--log-dir=${logs}`,
       `--agent=${join(repository, 'services/core/mock-agent/bin/mock-agent')}`,
       '--agent-arg=--speed=20', '--parent=stdio', `--allow-origin=${origin}`,
+      ...(options.denySystemAudio ? ['--agent-arg=--deny=system_audio'] : []),
     ]);
     children.push(core);
     const pending = readyPort(core);
@@ -173,6 +174,10 @@ export async function startNotesStack(options: { model?: boolean } = {}) {
       const text = await response.text();
       return { status: response.status, text, json: () => JSON.parse(text) as unknown };
     };
+    if (!options.onboarding) {
+      const saved = await api('PUT', '/settings/ui', { onboarding_done: true, language: 'en' });
+      if (saved.status !== 200) throw new Error(`Cannot prepare existing-user settings: ${saved.status}`);
+    }
 
     const query = <T = Record<string, unknown>>(sql: string, ...params: (string | number)[]): T[] => {
       const database = new DatabaseSync(join(data, 'db.sqlite'), { readOnly: true });
@@ -252,7 +257,7 @@ export async function startNotesStack(options: { model?: boolean } = {}) {
 }
 
 /** `test` with a `stacks` fixture: every stack it starts is stopped at teardown, even when the test times out. */
-export const test = base.extend<{ stacks: (options?: { model?: boolean }) => Promise<NotesStack> }>({
+export const test = base.extend<{ stacks: (options?: { model?: boolean; onboarding?: boolean; denySystemAudio?: boolean }) => Promise<NotesStack> }>({
   // eslint-disable-next-line no-empty-pattern
   stacks: async ({}, use, testInfo) => {
     const started: NotesStack[] = [];

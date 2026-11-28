@@ -224,6 +224,13 @@ export async function launchStack(options: StackOptions = {}): Promise<Stack> {
     const pendingReady = readReadyPort(core);
     core.child.stdin.write(`${JSON.stringify({ token })}\n`);
     const port = await pendingReady;
+    if (port !== undefined) {
+      const saved = await fetch(`http://127.0.0.1:${port}/api/v1/settings/ui`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarding_done: true, language: 'en' }),
+      });
+      if (!saved.ok) throw new Error(`Cannot prepare existing-user settings: ${saved.status}`);
+    }
 
     const viteEnv = { ...process.env, ...options.extraEnv };
     delete viteEnv.VITE_CORE_PORT;
