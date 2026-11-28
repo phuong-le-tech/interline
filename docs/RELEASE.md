@@ -52,7 +52,7 @@ Use OpenSSL 3 (`brew install openssl@3`; the macOS `openssl` is LibreSSL and has
 
 6. **Store the offline copies**: `.p12` plus password and the updater key plus password in your offline vault. Then delete the loose `interline-signing.key`, `.crt`, `.p12` and `p12.b64` files with a normal `rm` (secure overwrite does not work on APFS; the vault copy is the one that matters).
 
-7. **Restrict who can use the secrets (you do this yourself in the GitHub settings).** Move the four secrets into a GitHub **Environment** (for example `release`) limited to tags `v*` with a required reviewer (you), and add `environment: release` to the `macos` job. Add a **tag protection ruleset** for `v*` so only you can create release tags. Without these, anyone who can push a tag can trigger a signed draft.
+7. **Restrict who can use the secrets (you do this yourself in the GitHub settings).** Move the four secrets into a GitHub **Environment** (for example `release`) limited to tags `v*` with a required reviewer (you), and the `release` job already references `environment: release`; create that Environment first. Add a **tag protection ruleset** for `v*` so only you can create release tags. Without these, anyone who can push a tag can trigger a signed draft.
 
 The minisign updater key is the update trust root: the app installs whatever `latest.json` points to if its signature verifies against the public key in `tauri.conf.json`. The "second click" is enforced by the UI only; there is no rollback (downgrade) protection. Guard that key accordingly.
 
