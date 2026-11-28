@@ -5,11 +5,11 @@ import { CitationChip } from './CitationChip';
 
 /** The pre-meeting brief, collapsed to one line. It is an aid: when it cannot load or has nothing, it stays out of the way. */
 export function Brief({ client, meetingId }: { client: CoreClient; meetingId: string }) {
-  const { t, language } = useI18n();
+  const { t, language, errorMessage } = useI18n();
   const [brief, setBrief] = useState<BriefData>();
   const [hasProvider, setHasProvider] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const current = useRef(meetingId);
   current.current = meetingId;
 
@@ -35,13 +35,13 @@ export function Brief({ client, meetingId }: { client: CoreClient; meetingId: st
     try {
       const result = await client.writeBrief(requested);
       if (current.current !== requested) return;
-      if (result.status === 'error' || result.status === 'invalid_output') setError(result.message ?? t('brief_failed'));
+      if (result.status === 'error' || result.status === 'invalid_output') setError({ code: result.status === 'invalid_output' ? 'invalid_output' : undefined });
       else {
         const fresh = await client.brief(requested);
         if (current.current === requested) setBrief(fresh);
       }
     } catch {
-      if (current.current === requested) setError(t('brief_retry'));
+      if (current.current === requested) setError({});
     } finally {
       if (current.current === requested) setBusy(false);
     }
@@ -59,7 +59,7 @@ export function Brief({ client, meetingId }: { client: CoreClient; meetingId: st
       </button>
       {!hasProvider && <span>{t('configure_provider')}</span>}
       {brief.ai?.status === 'stale' && <p role="status">{t('brief_stale')}</p>}
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       {brief.ai?.status === 'ok' && brief.ai.lines.length > 0 && (
         <div className="ai-addition" aria-label={t('ai_brief')}>
           {brief.ai.lines.map((line, index) => (

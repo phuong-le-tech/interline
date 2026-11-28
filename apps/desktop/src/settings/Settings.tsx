@@ -16,18 +16,18 @@ export type SettingsProps = { client: CoreClient; models: ModelView[]; onDownloa
 
 export function Settings(props: SettingsProps) {
   const { client } = props;
-  const { t, language } = useI18n();
+  const { t, language, errorMessage } = useI18n();
   const [section, setSection] = useState<Section>('general');
   const [system, setSystem] = useState<SystemSettings>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const languageId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, [section]);
   useEffect(() => {
     let current = true;
-    void client.systemSettings().then((value) => { if (current) setSystem(value); }).catch((e: unknown) => { if (current) setError(String(e)); });
+    void client.systemSettings().then((value) => { if (current) setSystem(value); }).catch((e: unknown) => { if (current) setError(e); });
     return () => { current = false; };
   }, [client, section]);
   return <section aria-label={t('settings')} className="settings-screen">
@@ -41,7 +41,7 @@ export function Settings(props: SettingsProps) {
           const next = event.target.value as Language;
           setBusy(true); setError(''); setMessage('');
           void client.saveUiPreferences({ language: next }).then(() => { setLanguage(next); setMessage(translate(next, 'saved')); })
-            .catch((e: unknown) => setError(String(e))).finally(() => setBusy(false));
+            .catch((e: unknown) => setError(e)).finally(() => setBusy(false));
         }}><option value="en">{t('english')}</option><option value="fr">{t('french')}</option></select>
         <h4>{t('shortcuts')}</h4><p>{t('shortcut_search')}</p>
       </>}
@@ -56,7 +56,7 @@ export function Settings(props: SettingsProps) {
         <dt>{t('storage')}</dt><dd>{t('disk_free', { size: formatBytes(system.free_bytes) })}</dd>
       </dl>}
       {section === 'about' && <><p>Interline {system?.version ?? t('unknown')}</p><p>{t('license')}</p></>}
-      {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
+      {message && <p role="status">{message}</p>}{Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
     </div>
   </section>;
 }

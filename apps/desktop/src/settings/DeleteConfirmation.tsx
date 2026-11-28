@@ -5,11 +5,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 export function DeleteConfirmation({ title, permanent, onConfirm, onCancel }: {
   title: string; permanent: boolean; onConfirm: () => Promise<void>; onCancel: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const id = useId();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const submitting = useRef(false);
   useEffect(() => {
     const previous = document.activeElement;
@@ -25,12 +25,12 @@ export function DeleteConfirmation({ title, permanent, onConfirm, onCancel }: {
     <p id={`${id}-description`}>{permanent
       ? t('erase_description')
       : t('trash_description')}</p>
-    {error && <p role="alert">{error}</p>}
+    {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
     <button type="button" disabled={busy} onClick={onCancel}>{t('cancel')}</button>{' '}
     <button type="button" disabled={busy} onClick={() => {
       if (submitting.current) return;
       submitting.current = true; setBusy(true); setError('');
-      void onConfirm().catch((e: unknown) => setError(String(e)))
+      void onConfirm().catch((e: unknown) => setError(e))
         .finally(() => { submitting.current = false; setBusy(false); });
     }}>{permanent ? t('delete_permanently') : t('move_trash')}</button>
   </dialog>;

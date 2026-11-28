@@ -65,7 +65,8 @@ describe('onboarding and settings accessible controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue without' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue without' }));
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Disk unavailable');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong. Please try again.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Disk unavailable');
     expect(onComplete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());

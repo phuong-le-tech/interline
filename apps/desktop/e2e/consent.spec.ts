@@ -114,7 +114,8 @@ test('failed acknowledgement keeps reminder open and starts no recording', async
     const dialog = page.getByRole('dialog', { name: /consent|record/i });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('Acknowledgement unavailable');
+    await expect(page.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+    await expect(page.getByRole('alert')).not.toContainText('Acknowledgement unavailable');
     await expect(dialog).toBeVisible();
     expect(starts).toBe(0);
     expect(creations).toBe(1);

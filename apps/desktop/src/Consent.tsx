@@ -1,6 +1,6 @@
 import { en } from './i18n/en';
 import { fr } from './i18n/fr';
-import { detectLanguage, translate, useI18n } from './i18n/useI18n';
+import { detectLanguage, translate, useI18n, errorMessage as formatError } from './i18n/useI18n';
 import { trapDialogFocus } from './dialogFocus';
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -13,6 +13,7 @@ export function Consent({ locale, onContinue, onCancel }: {
 }) {
   const current = useI18n();
   const language = locale ? detectLanguage(locale) : current.language;
+  const errorMessage = (error: unknown) => formatError(error, language);
   const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
   const titleId = useId();
   const reminderId = useId();
@@ -21,7 +22,7 @@ export function Consent({ locale, onContinue, onCancel }: {
   const [doNotRemind, setDoNotRemind] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<unknown>();
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -40,7 +41,7 @@ export function Consent({ locale, onContinue, onCancel }: {
       await navigator.clipboard.writeText(CONSENT_SENTENCES[language]);
       setCopied(true);
     } catch {
-      setError(t('clipboard_error'));
+      setError({ code: 'clipboard_failed' });
     }
   };
 
@@ -52,7 +53,7 @@ export function Consent({ locale, onContinue, onCancel }: {
     try {
       await onContinue(doNotRemind);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -76,7 +77,7 @@ export function Consent({ locale, onContinue, onCancel }: {
       <button type="button" onClick={() => void copy()}>{t('copy')}</button>
       {copied && <p role="status">{t('copied')}</p>}
       <label><input type="checkbox" checked={doNotRemind} disabled={busy} onChange={(e) => setDoNotRemind(e.target.checked)} />{t('consent_checkbox')}</label>
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       <div className="consent-actions">
         <button type="button" disabled={busy} onClick={onCancel}>{t('cancel')}</button>
         <button type="button" disabled={busy} onClick={() => void proceed()}>{t('continue')}</button>

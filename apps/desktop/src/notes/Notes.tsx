@@ -31,11 +31,11 @@ function journalPayload(kind: string, position: string, content: string, plainTe
 }
 
 export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Props) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [mode, setMode] = useState<ViewMode>('enhanced');
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<unknown>();
   const [enhancing, setEnhancing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [highlightedSegment, setHighlightedSegment] = useState<number | undefined>(highlightedSegmentId);
@@ -101,7 +101,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
     if (ok) {
       await refreshBlocks();
     } else if (coreAlive) {
-      setError(t('save_failed'));
+      setError({ code: 'notes_save_failed' });
     }
   };
 
@@ -112,11 +112,11 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
     try {
       const result = await client.enhance(meetingId);
       if (result.status === 'invalid_output') {
-        setError(result.message ?? t('invalid_format'));
+        setError({ code: 'invalid_output' });
       }
       await refreshBlocks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       setEnhancing(false);
     }
@@ -127,7 +127,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
       await client.acceptBlock(meetingId, blockId);
       await refreshBlocks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
@@ -136,7 +136,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
       await client.deleteBlock(meetingId, blockId);
       await refreshBlocks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
@@ -165,7 +165,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
         </button>
         {!hasProvider && <span>{t('configure_provider')}</span>}
       </div>
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       {!coreAlive && <p role="status">{t('engine_restarting')}</p>}
       <UserEditor blocks={userBlocks} onChange={sendBlock} />
       {mode === 'enhanced' && (

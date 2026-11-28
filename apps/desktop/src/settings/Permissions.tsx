@@ -8,16 +8,16 @@ import { Meters, type Levels } from '../Meters';
 export function Permissions({ client, system, onUpdate, calendar = false }: {
   client: CoreClient; system?: SystemSettings; onUpdate: (value: SystemSettings) => void; calendar?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const streams = system?.capabilities?.capture?.streams ?? [];
   const kinds: PermissionKind[] = calendar ? (system?.capabilities?.calendar ? ['calendar'] : [])
     : [...(streams.includes('mic') ? ['microphone' as const] : []), ...(streams.includes('system') ? ['system_audio' as const] : [])];
   const uri = { microphone: MICROPHONE_SETTINGS_URI, system_audio: SYSTEM_AUDIO_SETTINGS_URI, calendar: CALENDAR_SETTINGS_URI };
   return <div>
     {(!system?.capabilities || system.agent_unavailable) && <p role="status">{t('agent_unavailable')}</p>}
-    {error && <p role="alert">{error}</p>}
+    {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
     {kinds.map((kind) => {
       const state = system?.permissions?.[kind] ?? 'unknown';
       return <section key={kind} aria-label={t(kind)}>
@@ -25,7 +25,7 @@ export function Permissions({ client, system, onUpdate, calendar = false }: {
         <button type="button" disabled={busy} onClick={() => {
           setBusy(true); setError('');
           void client.requestPermission(kind).then((permissions) => { if (system) onUpdate({ ...system, permissions }); })
-            .catch((e: unknown) => setError(String(e))).finally(() => setBusy(false));
+            .catch((e: unknown) => setError(e)).finally(() => setBusy(false));
         }}>{t('request_permission', { name: t(kind) })}</button>
         {(state === 'denied' || state === 'restricted' || (kind === 'system_audio' && state === 'unknown')) && <PermissionBanner kind={kind} settingsUri={uri[kind]} />}
       </section>;
@@ -47,9 +47,9 @@ export function permissionLabel(state: string, t: ReturnType<typeof useI18n>['t'
 export function AudioTest({ levels, active, onRecord, onStop }: {
   levels: Levels; active: boolean; onRecord: () => void; onStop: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const sound = async () => {
     setError('');
     let context: AudioContext | undefined;
@@ -64,7 +64,7 @@ export function AudioTest({ levels, active, onRecord, onStop }: {
       oscillator.start(); oscillator.stop(context.currentTime + 1);
       oscillator.onended = () => { void context?.close(); };
       setMessage(t('sound_played'));
-    } catch (e) { setError(String(e)); await context?.close(); }
+    } catch (e) { setError(e); await context?.close(); }
   };
   return <div>
     <p>{t('audio_test_description')}</p>
@@ -74,6 +74,6 @@ export function AudioTest({ levels, active, onRecord, onStop }: {
       <button type="button" disabled={!active} onClick={onStop}>{t('stop')}</button>
       <button type="button" onClick={() => { void sound(); }}>{t('play_sound')}</button>
     </div>
-    {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}{Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
   </div>;
 }

@@ -232,5 +232,18 @@ export const fr = {
   "privacy_off": "désactivé",
   "skip_setup": "Passer la configuration",
   "permission_test_done": "Demande d’autorisation terminée.",
-  "shortcuts_hint": "Mod+/ : raccourcis clavier"
+  "shortcuts_hint": "Mod+/ : raccourcis clavier",
+  "error_generic": "Une erreur s’est produite. Veuillez réessayer.",
+  "error_no_provider": "Configurez un fournisseur d’IA dans les réglages, puis réessayez.",
+  "error_secret_store": "Le stockage sécurisé des clés est indisponible. Veuillez réessayer.",
+  "error_calendar_missing": "Connectez un calendrier dans les réglages, puis réessayez.",
+  "error_calendar_fetch": "La synchronisation du calendrier a échoué. Vérifiez son adresse, puis réessayez.",
+  "error_meeting_busy": "Cette réunion est encore en cours d’enregistrement ou de traitement. Attendez la fin avant de la supprimer.",
+  "error_meeting_restore": "Cette réunion ne peut pas être restaurée : sa suppression définitive a commencé ou elle n’existe plus.",
+  "error_invalid_request": "Vérifiez les informations saisies, puis réessayez.",
+  "error_not_found": "Cet élément n’est plus disponible. Actualisez, puis réessayez.",
+  "error_model_missing": "Installez un modèle de transcription avant d’enregistrer.",
+  "error_permission_missing": "Autorisez l’accès à l’audio dans les Réglages Système, puis réessayez.",
+  "error_model_checksum": "La vérification de l’intégrité du modèle a échoué. Relancez le téléchargement.",
+  "error_model_disk": "L’espace disque est insuffisant. Choisissez un modèle plus petit ou libérez de l’espace."
 } satisfies Record<keyof typeof en, string>;

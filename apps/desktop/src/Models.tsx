@@ -15,7 +15,7 @@ function actionLabel(state: ModelState, t: ReturnType<typeof useI18n>['t']): str
 }
 
 export function Models({ models, onDownload, system }: { models: ModelView[]; onDownload: (id: string) => void; system?: SystemSettings }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const speech = models.filter((model) => model.kind === 'stt').sort((a, b) => a.sizeBytes - b.sizeBytes);
   const ram = system?.ram_bytes;
   const recommended = speech.filter((model) => model.sizeBytes <= (ram ?? 0) / 16).at(-1) ?? speech[0];
@@ -42,7 +42,7 @@ export function Models({ models, onDownload, system }: { models: ModelView[]; on
                 <div className="bar-fill" style={{ width: `${percent(model)}%` }} />
               </div>
             )}
-            {model.state === 'failed' && model.error && <p role="alert">{model.error}</p>}
+            {model.state === 'failed' && model.error && <p role="alert">{errorMessage({ code: /checksum/i.test(model.error) ? 'model_checksum_failed' : /no space|disk full|not enough space/i.test(model.error) ? 'model_disk_full' : undefined })}</p>}
             {model.state !== 'installed' && ((system && model.sizeBytes - model.downloadedBytes > system.free_bytes)
               || /no space|disk full|not enough space/i.test(model.error ?? '')) && <p role="status">
               {system && t('disk_required', { required: formatBytes(model.sizeBytes - model.downloadedBytes), available: formatBytes(system.free_bytes) })}{' '}

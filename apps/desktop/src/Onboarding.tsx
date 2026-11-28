@@ -8,24 +8,24 @@ import { Providers } from './settings/Providers';
 import type { SettingsProps } from './settings/Settings';
 
 export function Onboarding(props: SettingsProps & { onComplete: () => void }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const [step, setStep] = useState(0);
   const [configure, setConfigure] = useState(false);
   const [system, setSystem] = useState<SystemSettings>();
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, [step]);
   useEffect(() => {
     let alive = true;
-    void props.client.systemSettings().then((value) => { if (alive) setSystem(value); }).catch((e: unknown) => { if (alive) setError(String(e)); });
+    void props.client.systemSettings().then((value) => { if (alive) setSystem(value); }).catch((e: unknown) => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [props.client]);
   const complete = async () => {
     if (busy) return;
     setBusy(true); setError('');
     try { await props.client.saveUiPreferences({ onboarding_done: true }); props.onComplete(); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(e); }
     finally { setBusy(false); }
   };
   return <section aria-label={t('welcome')} className="onboarding">
@@ -39,7 +39,7 @@ export function Onboarding(props: SettingsProps & { onComplete: () => void }) {
     </>}
     {step === 2 && <Models models={props.models} onDownload={props.onDownload} system={system} />}
     {step === 3 && <><p>{t('ai_optional')}</p>{configure && <Providers client={props.client} />}</>}
-    {error && <p role="alert">{error}</p>}
+    {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
     <div className="settings-actions">
       {step > 0 && <button type="button" disabled={busy} onClick={() => setStep(step - 1)}>{t('back')}</button>}
       {step < 3 ? <button type="button" onClick={() => setStep(step + 1)}>{t(step === 0 || (step === 2 && props.models.some((model) => model.kind === 'stt' && model.state === 'installed')) ? 'continue' : 'continue_without')}</button> : <>

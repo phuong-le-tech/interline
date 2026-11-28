@@ -230,5 +230,18 @@ export const en = {
   "privacy_off": "off",
   "skip_setup": "Skip setup",
   "permission_test_done": "Permission request completed.",
-  "shortcuts_hint": "Mod+/: keyboard shortcuts"
+  "shortcuts_hint": "Mod+/: keyboard shortcuts",
+  "error_generic": "Something went wrong. Please try again.",
+  "error_no_provider": "Configure an AI provider in Settings, then try again.",
+  "error_secret_store": "Secure key storage is unavailable. Please try again.",
+  "error_calendar_missing": "Connect a calendar in Settings, then try again.",
+  "error_calendar_fetch": "Could not sync your calendar. Check its address and try again.",
+  "error_meeting_busy": "This meeting is still recording or processing. Wait for it to finish before deleting it.",
+  "error_meeting_restore": "This meeting cannot be restored because permanent deletion has started or it no longer exists.",
+  "error_invalid_request": "Check the information you entered and try again.",
+  "error_not_found": "This item is no longer available. Refresh and try again.",
+  "error_model_missing": "Install a transcription model before recording.",
+  "error_permission_missing": "Allow audio access in System Settings, then try again.",
+  "error_model_checksum": "The model checksum check failed. Please retry the download.",
+  "error_model_disk": "There is not enough disk space. Choose a smaller model or free some space."
 } as const;

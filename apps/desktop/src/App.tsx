@@ -36,7 +36,7 @@ const MAX_RECONNECT_BACKOFF_MS = 8000;
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 export function App() {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const translation = useRef(t);
   translation.current = t;
   const [preferences, setPreferences] = useState<UiPreferences>();
@@ -48,7 +48,7 @@ export function App() {
   const [levels, setLevels] = useState<Levels>(SILENT_LEVELS);
   const [banners, setBanners] = useState<Partial<Record<PermissionKind, string>>>({});
   const [state, setState] = useState('idle');
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<unknown>();
   const [view, setView] = useState<'live' | 'models' | 'notes' | 'settings'>('live');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>();
   const [highlightedSegmentId, setHighlightedSegmentId] = useState<number | undefined>();
@@ -85,7 +85,7 @@ export function App() {
       const language = value.language || detectLanguage(navigator.language);
       if (!value.language) await client.saveUiPreferences({ language });
       if (alive) { setLanguage(language); setPreferences({ ...value, language }); }
-    }).catch((e: unknown) => { if (alive) setError(String(e)); });
+    }).catch((e: unknown) => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [client]);
 
@@ -136,7 +136,7 @@ export function App() {
           if (data.code === PERMISSION_MISSING) {
             setBanners((current) => ({ ...current, system_audio: SYSTEM_AUDIO_SETTINGS_URI }));
           } else {
-            setError(`${text(data.code)}: ${text(data.message)}`);
+            setError({ code: data.code });
           }
           break;
         case 'calendar.upcoming': {
@@ -170,8 +170,8 @@ export function App() {
       }
     };
     void runSubscribe();
-    void refreshMeetings(client).catch((e: unknown) => setError(String(e)));
-    void client.models().then(setModels).catch((e: unknown) => setError(String(e)));
+    void refreshMeetings(client).catch((e: unknown) => setError(e));
+    void client.models().then(setModels).catch((e: unknown) => setError(e));
     return () => controller.abort();
   }, [client, refreshMeetings]);
 
@@ -215,7 +215,7 @@ export function App() {
   useEffect(() => {
     if (!inTauri() || lastTray.current === tray) return;
     lastTray.current = tray;
-    void invoke('set_tray_state', { state: tray }).catch((e: unknown) => setError(t('tray_unavailable', { message: String(e) })));
+    void invoke('set_tray_state', { state: tray }).catch((e: unknown) => setError(e));
   }, [tray]);
 
   const record = async () => {
@@ -235,7 +235,7 @@ export function App() {
         await startRecording(id ?? (await client.createMeeting(t('untitled'))).id);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       preparingRecording.current = false;
     }
@@ -252,7 +252,7 @@ export function App() {
       await refreshMeetings(client);
     } catch (e) {
       setState('failed');
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
       if ((e as { code?: string }).code === MODEL_MISSING) setView('models');
     }
   };
@@ -262,7 +262,7 @@ export function App() {
     try {
       await client.stopRecording();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
@@ -273,7 +273,7 @@ export function App() {
     try {
       await client.downloadModel(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
@@ -286,9 +286,9 @@ export function App() {
       // shortcut: one automatic resume per explicit download; add bounded backoff if repeated interruptions become common.
       setModels((current) => current.map((value) => value.id === model.id ? { ...value, state: 'downloading', error: undefined } : value));
       void client.downloadModel(model.id).catch((e: unknown) => {
-        setError(String(e));
+        setError(e);
         setModels((current) => current.map((value) => value.id === model.id && value.state === 'downloading'
-          ? { ...value, state: 'failed', error: String(e) } : value));
+          ? { ...value, state: 'failed', error: 'download_failed' } : value));
       });
     }
   }, [client, models]);
@@ -318,12 +318,12 @@ export function App() {
       {(Object.entries(banners) as [PermissionKind, string][]).map(([kind, uri]) => (
         <PermissionBanner key={kind} kind={kind} settingsUri={uri} />
       ))}
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       {upcoming && client && (
         <p role="status" aria-label={t('upcoming_meeting')}>
           {upcoming.title} {t('starts_soon')}{' '}
           <button type="button" onClick={() => {
-            void client.meetingFromEvent(upcoming.eventId).then(({ id }) => { setUpcoming(undefined); void refreshMeetings(client); openMeetingNotes(id); }).catch((e: unknown) => setError(String(e)));
+            void client.meetingFromEvent(upcoming.eventId).then(({ id }) => { setUpcoming(undefined); void refreshMeetings(client); openMeetingNotes(id); }).catch((e: unknown) => setError(e));
           }}>{t('take_notes')}</button>{' '}
           <button type="button" onClick={() => setUpcoming(undefined)}>{t('dismiss')}</button>
         </p>

@@ -6,30 +6,30 @@ type Draft = Omit<Provider, 'id' | 'has_key'>;
 const empty = (): Draft => ({ name: '', kind: 'openai_compatible', base_url: '', model: '', supports_json_schema: false, is_default: true });
 
 export function Providers({ client }: { client: CoreClient }) {
-  const { t } = useI18n();
+  const { t, errorMessage } = useI18n();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [editing, setEditing] = useState<string>();
   const [draft, setDraft] = useState<Draft>(empty);
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>();
   const submitting = useRef(false);
   useEffect(() => {
     let alive = true;
-    void client.providers().then((value) => { if (alive) setProviders(value); }).catch((e: unknown) => { if (alive) setError(String(e)); });
+    void client.providers().then((value) => { if (alive) setProviders(value); }).catch((e: unknown) => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [client]);
   const run = async (action: () => Promise<void>) => {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setError(''); setMessage('');
     try { await action(); setProviders(await client.providers()); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(e); }
     finally { submitting.current = false; setBusy(false); }
   };
   const test = async (id: string) => {
     const result = await client.testProvider(id);
-    setMessage(`${result.status === 'ok' ? t('provider_ok') : t('provider_error')} ${result.detail}`);
+    setMessage(t(result.status === 'ok' ? 'provider_ok' : 'provider_error'));
   };
   return <section aria-label={t('providers')}>
     <p>{t('ai_optional')}</p>
@@ -78,6 +78,6 @@ export function Providers({ client }: { client: CoreClient }) {
         {editing && <button type="button" disabled={busy} onClick={() => { void run(() => test(editing)); }}>{t('test_connection')}</button>}
       </div>
     </form>
-    {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}{Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
   </section>;
 }

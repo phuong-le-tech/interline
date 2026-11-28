@@ -4,8 +4,6 @@ import type { CalendarEvent, CoreClient } from './coreClient';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
 function todayRange(): [number, number] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -14,12 +12,12 @@ function todayRange(): [number, number] {
 
 /** Today's events, the calendar link, and manual meetings. The calendar is fetched only when the user asks. */
 export function Today({ client, onOpenMeeting }: { client: CoreClient; onOpenMeeting: (meetingId: string) => void }) {
-  const { t, language } = useI18n();
+  const { t, language, errorMessage } = useI18n();
   const [host, setHost] = useState<string>();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -35,14 +33,14 @@ export function Today({ client, onOpenMeeting }: { client: CoreClient; onOpenMee
       await action();
       await load();
     } catch (e) {
-      setError(message(e));
+      setError(e);
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
-    load().catch((e: unknown) => setError(message(e)));
+    load().catch((e: unknown) => setError(e));
   }, [load]);
 
   const connect = () =>
@@ -58,7 +56,7 @@ export function Today({ client, onOpenMeeting }: { client: CoreClient; onOpenMee
   return (
     <section aria-label={t('today')}>
       <h2>{t('today')}</h2>
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       <ul aria-label={t('today_events')} className="today-events">
         {events.map((event) => (
           <li key={event.id}>
