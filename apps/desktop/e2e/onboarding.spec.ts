@@ -1,0 +1,35 @@
+import { test, expect } from './support/notes-stack';
+
+test('fresh onboarding is keyboard usable, optional, and persisted with language across core restart', async ({ page, stacks }) => {
+  const stack = await stacks({ model: false });
+  expect(stack.coreReady, stack.diagnostics()).toBe(true);
+  await page.goto('/');
+  const onboarding = page.getByRole('region', { name: 'Welcome to Interline' });
+  await expect(onboarding).toBeVisible();
+  await page.getByRole('button', { name: 'Continue', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Permissions', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue without', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Transcription', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue without', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Later', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(onboarding).toBeHidden();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByLabel('Language', { exact: true }).selectOption('fr');
+  await expect(page.getByRole('heading', { name: 'Réglages', exact: true })).toBeVisible();
+  await stack.killCore();
+  expect(await stack.restartCore()).toBe(true);
+  await page.reload();
+  await expect(onboarding).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Réglages', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Réglages', exact: true }).click();
+  await expect(page.getByLabel('Langue', { exact: true })).toHaveValue('fr');
+  await page.getByRole('button', { name: 'À propos', exact: true }).click();
+  await expect(page.getByText('Licence MIT', { exact: true })).toBeVisible();
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('dialog', { name: 'Rechercher', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+});
