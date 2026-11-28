@@ -49,8 +49,13 @@ export function Providers({ client }: { client: CoreClient }) {
       event.preventDefault(); const secret = key; setKey('');
       void run(async () => {
         const provider = editing ? await client.updateProvider(editing, draft) : await client.createProvider(draft);
+        try {
+          if (secret) await client.saveProviderKey(provider.id, secret);
+        } catch (error) {
+          if (!editing) await client.deleteProvider(provider.id);
+          throw error;
+        }
         setEditing(provider.id);
-        if (secret) await client.saveProviderKey(provider.id, secret);
         setMessage(t('saved'));
       });
     }}>

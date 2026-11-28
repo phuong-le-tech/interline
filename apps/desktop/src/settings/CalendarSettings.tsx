@@ -28,8 +28,8 @@ export function CalendarSettings({ client, system, onUpdate }: { client: CoreCli
     {source?.configured ? <p>{t('calendar')}: {source.host}{' '}
       <button type="button" disabled={busy} onClick={() => { void run(() => client.removeIcsSource()); }}>{t('disconnect')}</button>{' '}
       <button type="button" disabled={busy} onClick={() => { void run(() => client.syncCalendar()); }}>{t('sync')}</button>
-    </p> : <form onSubmit={(event) => { event.preventDefault(); const address = url; setUrl(''); void run(() => client.setIcsSource(address)); }}>
-      <label>{t('calendar_address')}<input type="password" autoComplete="off" value={url} onChange={(e) => setUrl(e.target.value)} /></label>
+    </p> : <form onSubmit={(event) => { event.preventDefault(); void run(async () => { await client.setIcsSource(url); setUrl(''); }); }}>
+      <label>{t('calendar_address')}<input type="password" autoComplete="off" disabled={busy} value={url} onChange={(e) => setUrl(e.target.value)} /></label>
       <button type="submit" disabled={busy || !url.trim()}>{t('connect_calendar')}</button>
     </form>}
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
