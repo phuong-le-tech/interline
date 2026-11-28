@@ -6,6 +6,8 @@ work=$(mktemp -d)
 kc="$work/throwaway.keychain-db"
 trap 'security delete-keychain "$kc" 2>/dev/null || true; rm -rf "$work"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
+"$here/check-release-workflow.sh" || fail "release workflow structure"
+echo "PASS release job holds no build code, build job holds no secrets"
 
 eval "$("$here/make-identity.sh" "$kc" "Interline Throwaway Test" pw-throwaway | sed 's/^/ID_/')"
 mkdir -p "$work/src/Interline.app/Contents/MacOS" "$work/rel" "$work/tmp"

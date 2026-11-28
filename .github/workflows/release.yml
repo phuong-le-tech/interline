@@ -11,10 +11,13 @@ permissions:
   contents: read
 
 jobs:
-  macos:
+  # Job 1: runs repository build code (pnpm scripts, Cargo build scripts). It gets no credentials and no environment.
+  build:
     runs-on: macos-latest
     permissions:
-      contents: write # create the draft release
+      contents: read
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -40,35 +43,68 @@ jobs:
           [ "v$conf" = "$TAG" ] || { echo "tag $TAG does not match tauri.conf.json version $conf"; exit 1; }
           if grep -q 'REPLACE_WITH' apps/desktop/src-tauri/tauri.conf.json; then echo 'tauri.conf.json still has the placeholder updater public key (docs/RELEASE.md)'; exit 1; fi
           [ -n "$CERT_SHA256" ] || { echo 'repository variable INTERLINE_CERT_SHA256 is not set (docs/RELEASE.md)'; exit 1; }
-      - name: Install dependencies (no secrets in this step)
+      - name: Install dependencies
         run: cd apps/desktop && pnpm install --frozen-lockfile
-      - name: Build
+      - name: Build the unsigned app
         run: scripts/package/build.sh
-      - name: Import the signing identity (after the build, so no build script can use the key)
+      - name: Pack the unsigned app and record its SHA-256
+        id: pack
+        run: |
+          mkdir "$RUNNER_TEMP/unsigned"
+          COPYFILE_DISABLE=1 tar -C apps/desktop/src-tauri/target/release/bundle/macos -czf "$RUNNER_TEMP/unsigned/Interline-unsigned.tar.gz" Interline.app
+          echo "sha256=$(shasum -a 256 "$RUNNER_TEMP/unsigned/Interline-unsigned.tar.gz" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: interline-unsigned
+          path: ${{ runner.temp }}/unsigned/Interline-unsigned.tar.gz
+          retention-days: 1
+
+  # Job 2: the only job with secrets and the environment. It runs no dependency or build code of the repository: the artifact is DATA
+  # (checked against the hash the build job recorded, extracted, signed, never executed). Only scripts that
+  # are committed in the tagged revision run here.
+  release:
+    needs: build
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: write # create the draft release
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: interline-unsigned
+          path: ${{ runner.temp }}/in
+      - name: Check the artifact against the recorded hash and unpack it
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          actual=$(shasum -a 256 "$RUNNER_TEMP/in/Interline-unsigned.tar.gz" | cut -d ' ' -f 1)
+          [ "$actual" = "$EXPECTED" ] || { echo "artifact hash $actual differs from the build job's $EXPECTED"; exit 1; }
+          mkdir "$RUNNER_TEMP/app" && tar -xzf "$RUNNER_TEMP/in/Interline-unsigned.tar.gz" -C "$RUNNER_TEMP/app"
+      - name: Sign inside-out, check the pinned certificate, then destroy the keychain
         env:
           P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          SIGN_IDENTITY: ${{ vars.INTERLINE_SIGNING_IDENTITY }}
+          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
         run: |
           KEYCHAIN="$RUNNER_TEMP/interline-release.keychain-db"
-          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          cleanup() { security delete-keychain "$KEYCHAIN" 2>/dev/null || true; rm -f "$RUNNER_TEMP/identity.p12"; }
+          trap cleanup EXIT
           KC_PW=$(uuidgen)
           echo "::add-mask::$KC_PW"
-          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          (umask 077; printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/identity.p12")
           security create-keychain -p "$KC_PW" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security set-keychain-settings -lut 600 "$KEYCHAIN"
           security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
           security import "$RUNNER_TEMP/identity.p12" -x -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN"
           rm -f "$RUNNER_TEMP/identity.p12"
-      - name: Sign inside-out and check the pinned certificate
-        env:
-          SIGN_IDENTITY: ${{ vars.INTERLINE_SIGNING_IDENTITY }}
-          SIGN_KEYCHAIN: ${{ env.KEYCHAIN }}
-          CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
-        run: |
-          app=apps/desktop/src-tauri/target/release/bundle/macos/Interline.app
-          scripts/package/sign-macos.sh "$app"
-          cd "$RUNNER_TEMP" && mkdir cert && cd cert && codesign -d --extract-certificates "$GITHUB_WORKSPACE/$app" 2>/dev/null
+          app="$RUNNER_TEMP/app/Interline.app"
+          SIGN_KEYCHAIN="$KEYCHAIN" scripts/package/sign-macos.sh "$app"
+          mkdir "$RUNNER_TEMP/cert" && cd "$RUNNER_TEMP/cert" && codesign -d --extract-certificates "$app"
           found=$(openssl x509 -inform DER -noout -fingerprint -sha256 -in codesign0 | sed 's/.*=//' | tr -d ':')
           want=$(printf '%s' "$CERT_SHA256" | tr -d ':' | tr 'a-f' 'A-F')
           [ "$found" = "$want" ] || { echo "signed with $found, expected $want"; exit 1; }
@@ -76,25 +112,24 @@ jobs:
         env:
           CERT_SHA256: ${{ vars.INTERLINE_CERT_SHA256 }}
         run: |
-          out="$RUNNER_TEMP/release"; mkdir -p "$out"
-          app=apps/desktop/src-tauri/target/release/bundle/macos/Interline.app
+          out="$RUNNER_TEMP/release"; mkdir "$out"
           version=${TAG#v}
-          # Tarball and DMG are made after the last codesign call.
-          COPYFILE_DISABLE=1 tar -C "$(dirname "$app")" -czf "$out/Interline.app.tar.gz" Interline.app
-          dmg_root=$(mktemp -d); ditto "$app" "$dmg_root/Interline.app"; ln -s /Applications "$dmg_root/Applications"
+          COPYFILE_DISABLE=1 tar -C "$RUNNER_TEMP/app" -czf "$out/Interline.app.tar.gz" Interline.app
+          dmg_root=$(mktemp -d); ditto "$RUNNER_TEMP/app/Interline.app" "$dmg_root/Interline.app"; ln -s /Applications "$dmg_root/Applications"
           hdiutil create -ov -format UDZO -volname Interline -srcfolder "$dmg_root" "$out/Interline_${version}_aarch64.dmg"
           scripts/package/render-install.sh "$CERT_SHA256" > "$out/install.sh"
-          echo "OUT=$out" >> "$GITHUB_ENV"
-      - name: Sign the update archive (the only step that sees the updater key; dependencies are already installed)
+      - name: Install the pinned updater signer without lifecycle scripts
+        run: npm install --ignore-scripts --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/signer" @tauri-apps/cli@2.12.4
+      - name: Sign the update archive (the only step that sees the updater key)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cd apps/desktop && pnpm exec tauri signer sign "$OUT/Interline.app.tar.gz"
+        run: '"$RUNNER_TEMP/signer/node_modules/.bin/tauri" signer sign "$RUNNER_TEMP/release/Interline.app.tar.gz"'
       - name: Manifest and checksums
         run: |
-          version=${TAG#v}
-          scripts/package/make-latest-json.sh "$version" "$GITHUB_REPOSITORY" "$TAG" "$OUT/Interline.app.tar.gz.sig" > "$OUT/latest.json"
-          (cd "$OUT" && shasum -a 256 Interline.app.tar.gz "Interline_${version}_aarch64.dmg" install.sh latest.json > SHA256SUMS)
+          out="$RUNNER_TEMP/release"; version=${TAG#v}
+          scripts/package/make-latest-json.sh "$version" "$GITHUB_REPOSITORY" "$TAG" "$out/Interline.app.tar.gz.sig" > "$out/latest.json"
+          (cd "$out" && shasum -a 256 Interline.app.tar.gz "Interline_${version}_aarch64.dmg" install.sh latest.json > SHA256SUMS)
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,10 +138,10 @@ jobs:
           gh release create "$TAG" --draft --verify-tag --title "Interline $TAG" \
             --notes "Draft. Signing certificate SHA-256: $CERT_SHA256. Not notarized: see install.sh or the Open Anyway steps." \
             "$RUNNER_TEMP"/release/*
-      - name: Delete the temporary keychain
+      - name: Delete the temporary keychain (backup)
         if: always()
         run: |
-          security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+          security delete-keychain "$RUNNER_TEMP/interline-release.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/identity.p12"
 
   windows:
