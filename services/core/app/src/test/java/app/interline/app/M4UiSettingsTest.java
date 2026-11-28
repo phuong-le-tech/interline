@@ -18,7 +18,11 @@ class M4UiSettingsTest {
                 assertThat(call(port, "PUT", "/settings/ui", invalid).status()).isEqualTo(400);
             for (int i = 0; i < 2; i++) assertThat(call(port, "PUT", "/settings/ui",
                     Map.of("language", "fr", "onboarding_done", true)).status()).isEqualTo(200);
-            assertThat(call(port, "GET", "/settings/system", null).status()).isEqualTo(200);
+            var system = ok(call(port, "GET", "/settings/system", null), "local diagnostics").json();
+            assertThat(system.path("capabilities").path("capture").path("streams").get(0).asText()).isEqualTo("mic");
+            assertThat(system.path("permissions").path("microphone").asText()).isEqualTo("granted");
+            assertThat(system.path("free_bytes").asLong()).isPositive();
+            assertThat(call(port, "POST", "/settings/permissions/microphone", null).json().path("microphone").asText()).isEqualTo("granted");
             assertThat(call(port, "POST", "/settings/permissions/invented", null).status()).isEqualTo(400);
         }
         try (var context = boot(data)) {

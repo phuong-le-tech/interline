@@ -357,6 +357,16 @@ public final class AgentPlatformCapabilities implements PlatformCapabilities, Au
 
     public boolean calendarSupported() { return calendarSupported; }
 
+    public JsonNode capabilities() { return awaitReadyLink().connection.hello().body().path("capabilities").deepCopy(); }
+
+    public JsonNode permissions(String permission) {
+        ObjectNode body = ControlMessage.nodes().objectNode();
+        if (permission != null) body.put("permission", permission);
+        ControlMessage reply = exchange(permission == null ? "permission.status" : "permission.request", body, Duration.ofSeconds(25));
+        if ("error".equals(reply.type())) throw new IllegalStateException("The agent could not read permissions");
+        return reply.body().deepCopy();
+    }
+
     public app.interline.domain.CalendarSource calendar() { return new AgentCalendarSource(this::exchange); }
 
     /** The callback must queue work: the reader must remain free to deliver its reply. */

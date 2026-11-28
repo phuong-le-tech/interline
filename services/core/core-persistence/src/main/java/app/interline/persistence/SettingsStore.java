@@ -7,6 +7,22 @@ public final class SettingsStore {
 
     public SettingsStore(SqliteDatabase database) { this.database = database; }
 
+    public String uiPreference(String key, String fallback) {
+        return database.read(db -> db.sql("SELECT value FROM settings WHERE key = ?").param(key)
+                .query(String.class).optional().orElse(fallback));
+    }
+
+    public void saveUiPreferences(java.util.Map<String, String> values, long nowMs) {
+        if (!java.util.Set.of("onboarding.done", "ui.language").containsAll(values.keySet()))
+            throw new IllegalArgumentException("unknown UI preference");
+        database.write(db -> {
+            values.forEach((key, value) -> db.sql("INSERT INTO settings(key,value,updated_at) VALUES (?,?,?) "
+                    + "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at")
+                    .params(key, value, nowMs).update());
+            return null;
+        });
+    }
+
     public String audioRetention() {
         return database.read(db -> db.sql("SELECT value FROM settings WHERE key = 'audio.retention'")
                 .query(String.class).optional().orElse("7d"));

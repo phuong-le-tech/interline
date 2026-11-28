@@ -133,7 +133,7 @@ class CoreConfiguration {
     /** Starts the agent after the context is up and stops recording, then the agent, on the way down. */
     @Bean SmartLifecycle captureLifecycle(InterlineProperties properties, RecordingService recording, Clock clock,
                                           String coreVersion, ModelService models, AgentSecrets secrets, CalendarService calendar, EventBus events,
-                                          @org.jspecify.annotations.Nullable ProcessRegistry registry) {
+                                          @org.jspecify.annotations.Nullable ProcessRegistry registry, UiSettingsController uiSettings) {
         return new SmartLifecycle() {
             private AgentPlatformCapabilities capture;
 
@@ -151,6 +151,7 @@ class CoreConfiguration {
                 secrets.bind(capture.secrets());
                 calendar.bind(capture, events);
                 recording.bind(capture);
+                uiSettings.bind(capture);
                 capture.trackProcesses(registry);
                 capture.start();
             }
@@ -160,6 +161,7 @@ class CoreConfiguration {
                 secrets.unbind();
                 if (capture != null) capture.close();
                 capture = null;
+                uiSettings.bind(null);
             }
 
             @Override public synchronized boolean isRunning() { return capture != null; }
