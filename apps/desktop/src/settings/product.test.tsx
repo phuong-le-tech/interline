@@ -20,6 +20,14 @@ function props(): SettingsProps {
 }
 
 describe('onboarding and settings accessible controls', () => {
+  it.each(['absent', 'installed'] as const)('labels the model step correctly when the speech model is %s', (state) => {
+    const options = props();
+    options.models = [{ id: 'small', name: 'Small', kind: 'stt', state, sizeBytes: 100, downloadedBytes: state === 'installed' ? 100 : 0 }];
+    render(<Onboarding {...options} onComplete={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue without' }));
+    expect(screen.getByRole('button', { name: state === 'installed' ? 'Continue' : 'Continue without' })).toBeEnabled();
+  });
   it('offers a smaller model after disk exhaustion and resumes a partial download only on request', () => {
     const onDownload = vi.fn();
     render(<Models system={system} onDownload={onDownload} models={[

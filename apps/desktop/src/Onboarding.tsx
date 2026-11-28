@@ -42,7 +42,7 @@ export function Onboarding(props: SettingsProps & { onComplete: () => void }) {
     {error && <p role="alert">{error}</p>}
     <div className="settings-actions">
       {step > 0 && <button type="button" disabled={busy} onClick={() => setStep(step - 1)}>{t('back')}</button>}
-      {step < 3 ? <button type="button" onClick={() => setStep(step + 1)}>{t(step === 0 ? 'continue' : 'continue_without')}</button> : <>
+      {step < 3 ? <button type="button" onClick={() => setStep(step + 1)}>{t(step === 0 || (step === 2 && props.models.some((model) => model.kind === 'stt' && model.state === 'installed')) ? 'continue' : 'continue_without')}</button> : <>
         <button type="button" disabled={busy} onClick={() => { void complete(); }}>{t(configure ? 'finish' : 'later')}</button>
         {!configure && <button type="button" onClick={() => setConfigure(true)}>{t('configure')}</button>}
       </>}
