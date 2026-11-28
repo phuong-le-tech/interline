@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/useI18n';
 import { meterValue } from './liveState';
 
 export type Levels = { mic: number; system: number };
@@ -15,10 +16,11 @@ function Meter({ label, rms }: { label: string; rms: number }) {
 }
 
 export function Meters({ levels }: { levels: Levels }) {
+  const { t } = useI18n();
   return (
-    <div aria-label="Input levels" role="group">
-      <Meter label="Me" rms={levels.mic} />
-      <Meter label="Them" rms={levels.system} />
+    <div aria-label={t('input_levels')} role="group">
+      <Meter label={t('me')} rms={levels.mic} />
+      <Meter label={t('them')} rms={levels.system} />
     </div>
   );
 }

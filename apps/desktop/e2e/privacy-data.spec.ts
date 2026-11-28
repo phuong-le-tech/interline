@@ -25,7 +25,8 @@ test('delete, trash, restore and erase; retention persists across a core restart
     await expect(confirmation).toContainText('restore it for 30 days');
     await confirmation.getByRole('button', { name: 'Move to trash', exact: true }).click();
     await expect(remove).toHaveCount(0);
-    await page.getByRole('button', { name: 'Privacy and data', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Privacy', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'FileVault status is unknown.' })).toHaveCSS('border-inline-start-color', 'rgb(168, 122, 44)');
     await page.getByRole('button', { name: 'Restore Lifecycle meeting', exact: true }).click();
     await expect(page.getByText('Meeting restored.', { exact: true })).toBeVisible();
@@ -33,7 +34,8 @@ test('delete, trash, restore and erase; retention persists across a core restart
     await remove.click();
     await confirmation.getByRole('button', { name: 'Move to trash', exact: true }).click();
     await expect(confirmation).toHaveCount(0);
-    await page.getByRole('button', { name: 'Privacy and data', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Privacy', exact: true }).click();
     await page.getByRole('button', { name: 'Permanently delete Lifecycle meeting', exact: true }).click();
     await expect(confirmation).toContainText('cannot be undone');
     await confirmation.getByRole('button', { name: 'Delete permanently', exact: true }).click();
@@ -47,7 +49,8 @@ test('delete, trash, restore and erase; retention persists across a core restart
     expect(stack.coreReady, stack.diagnostics()).toBe(true);
     expect(stack.viteReady, stack.diagnostics()).toBe(true);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Privacy and data', exact: true }).click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Privacy', exact: true }).click();
     await expect(retention).toHaveValue('30d');
     await expect(page.getByRole('list', { name: 'Trashed meetings' }).getByRole('listitem')).toHaveCount(0);
   } finally {

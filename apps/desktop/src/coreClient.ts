@@ -139,13 +139,20 @@ export async function waitForEndpoint(signal: AbortSignal): Promise<Endpoint | u
 export type AudioRetention = 'after_transcription' | '7d' | '30d' | 'forever';
 export type TrashedMeeting = { id: string; title: string; deletedAt: number; deletionStarted: boolean };
 export type PrivacyItem = { id: string; what: string; when: string; destinationHost: string | null; state: string };
+export type UiPreferences = { onboarding_done: boolean; language: '' | 'en' | 'fr' };
+export type SystemSettings = {
+  version: string; ram_bytes: number | null; free_bytes: number; audio_bytes: number; model_bytes: number;
+  capabilities?: { capture?: { streams?: string[] }; calendar?: boolean };
+  permissions?: Partial<Record<'microphone' | 'system_audio' | 'calendar', string>>;
+  agent_unavailable?: boolean;
+};
 
 export class CoreClient {
   constructor(private readonly endpoint: Endpoint) {}
 
   private url(path: string): string {
     const allowed =
-        /^\/(recording\/(start|stop)|settings\/(consent|retention)|privacy|trash(\/[A-Za-z0-9%._~-]+)?|meetings|meetings\/[A-Za-z0-9%._~-]+|meetings\/[A-Za-z0-9%-._~]+\/(restore|consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
+        /^\/(recording\/(start|stop)|settings\/(consent|retention|ui|system|permissions\/(microphone|system_audio|calendar))|privacy|trash(\/[A-Za-z0-9%._~-]+)?|meetings|meetings\/[A-Za-z0-9%._~-]+|meetings\/[A-Za-z0-9%-._~]+\/(restore|consent-ack|transcript|blocks|blocks\/[A-Za-z0-9%-._~]+|blocks\/[A-Za-z0-9%-._~]+\/accept|enhance|enhance\/undo|followup-email|actions|ai-runs|export|brief|brief\/ai)|calendar\/(ics-source|sync|events(\?.*)?|events\/[A-Za-z0-9%-._~]+\/meeting)|search(\?.*)?|templates|providers(\/[A-Za-z0-9%-._~]+(\/(key|test))?)?|models(\/[A-Za-z0-9%._~-]+\/download)?|events)$/;
     if (!allowed.test(path)) {
       throw new Error(`invalid API path: ${path}`);
     }
@@ -187,6 +194,15 @@ export class CoreClient {
 
   consentSettings(): Promise<{ reminder_enabled: boolean }> {
     return this.json('/settings/consent');
+  }
+
+  uiPreferences(): Promise<UiPreferences> { return this.json('/settings/ui'); }
+  saveUiPreferences(value: Partial<UiPreferences>): Promise<UiPreferences> {
+    return this.json('/settings/ui', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+  }
+  systemSettings(): Promise<SystemSettings> { return this.json('/settings/system'); }
+  requestPermission(kind: 'microphone' | 'system_audio' | 'calendar'): Promise<SystemSettings['permissions']> {
+    return this.json(`/settings/permissions/${kind}`, { method: 'POST' });
   }
 
   setConsentReminder(enabled: boolean): Promise<unknown> {

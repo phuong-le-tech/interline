@@ -22,6 +22,15 @@ function fake(over: Record<string, unknown> = {}) {
 }
 
 describe('Today', () => {
+  it('retains the submitted ICS address when the initial sync fails', async () => {
+    const core = fake({ syncCalendar: vi.fn().mockRejectedValue(Object.assign(new Error('Private detail'), { code: 'calendar_fetch_failed' })) });
+    render(<Today client={core as unknown as CoreClient} onOpenMeeting={vi.fn()} />);
+    const field = screen.getByLabelText('Calendar address (ICS)');
+    fireEvent.change(field, { target: { value: 'https://cal.example.com/private.ics' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect calendar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not sync your calendar. Check its address and try again.');
+    expect(field).toHaveValue('https://cal.example.com/private.ics');
+  });
   it('fetches nothing until the user connects, then syncs once and never shows the address back', async () => {
     const core = fake();
     render(<Today client={core as unknown as CoreClient} onOpenMeeting={() => undefined} />);

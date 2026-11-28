@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import React from 'react';
 
 export type Mode = 'mine' | 'enhanced';
@@ -7,8 +8,10 @@ interface Props {
   onChange: (mode: Mode) => void;
 }
 
-export const EnhancedToggle: React.FC<Props> = ({ mode, onChange }) => (
-  <fieldset role="radiogroup" aria-label="Version">
+export const EnhancedToggle: React.FC<Props> = ({ mode, onChange }) => {
+  const { t } = useI18n();
+  return (
+  <fieldset role="radiogroup" aria-label={t('version')}>
     <label>
       <input
         type="radio"
@@ -17,7 +20,7 @@ export const EnhancedToggle: React.FC<Props> = ({ mode, onChange }) => (
         checked={mode === 'mine'}
         onChange={() => onChange('mine')}
       />
-      Mine
+      {t('mine')}
     </label>
     <label>
       <input
@@ -27,7 +30,8 @@ export const EnhancedToggle: React.FC<Props> = ({ mode, onChange }) => (
         checked={mode === 'enhanced'}
         onChange={() => onChange('enhanced')}
       />
-      Enhanced
+      {t('enhanced')}
     </label>
   </fieldset>
 );
+};

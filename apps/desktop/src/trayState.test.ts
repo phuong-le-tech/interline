@@ -3,12 +3,14 @@ import { createElement, StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
-import type { CoreEvent } from './coreClient';
+import type { CoreEvent, ModelView } from './coreClient';
 import type { PermissionKind } from './liveState';
 
 const core = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
   listener: undefined as ((event: CoreEvent) => void) | undefined,
+  models: [] as ModelView[],
+  download: vi.fn().mockResolvedValue({ started: true }),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: core.invoke }));
@@ -19,7 +21,9 @@ vi.mock('./coreClient', async (importOriginal) => {
     waitForEndpoint: vi.fn().mockResolvedValue({ port: 12345, token: 'test' }),
     CoreClient: class {
       meetings = vi.fn().mockResolvedValue([]);
-      models = vi.fn().mockResolvedValue([]);
+      uiPreferences = vi.fn().mockResolvedValue({ onboarding_done: true, language: "en" });
+      models = vi.fn(async () => core.models);
+      downloadModel = core.download;
       subscribe = vi.fn((listener: (event: CoreEvent) => void) => {
         core.listener = listener;
         return new Promise<void>(() => undefined);
@@ -75,6 +79,8 @@ describe('trayState mapping', () => {
 beforeEach(() => {
   core.invoke.mockClear();
   core.listener = undefined;
+  core.models = [];
+  core.download.mockClear();
   Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
 });
 
@@ -98,6 +104,37 @@ async function emit(name: string, data: CoreEvent['data']) {
 }
 
 describe('App tray state integration', () => {
+  it('automatically resumes one interrupted explicit download, without retrying indefinitely', async () => {
+    const model: ModelView = { id: 'small', name: 'Small', kind: 'stt', sizeBytes: 100, state: 'absent', downloadedBytes: 0 };
+    core.models = [model];
+    await mountApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(core.download).toHaveBeenCalledTimes(1));
+    await emit('model.download', { ...model, state: 'failed', downloadedBytes: 50, error: 'download interrupted' });
+    await waitFor(() => expect(core.download).toHaveBeenCalledTimes(2));
+    await emit('model.download', { ...model, state: 'failed', downloadedBytes: 70, error: 'download interrupted' });
+    expect(core.download).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['No space left on device', 'checksum mismatch'])('does not automatically retry %s', async (error) => {
+    const model: ModelView = { id: 'small', name: 'Small', kind: 'stt', sizeBytes: 100, state: 'absent', downloadedBytes: 0 };
+    core.models = [model];
+    await mountApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(core.download).toHaveBeenCalledTimes(1));
+    await emit('model.download', { ...model, state: 'failed', downloadedBytes: 50, error });
+    expect(core.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts a download from a partial file without an explicit request in this session', async () => {
+    const model: ModelView = { id: 'small', name: 'Small', kind: 'stt', sizeBytes: 100, state: 'partial', downloadedBytes: 50 };
+    core.models = [model];
+    await mountApp();
+    await emit('model.download', { ...model, state: 'failed', error: 'download interrupted' });
+    expect(core.download).not.toHaveBeenCalled();
+  });
   it('initializes the native tray to idle exactly once', async () => {
     await mountApp();
     expect(trayCalls()).toEqual([['set_tray_state', { state: 'idle' }]]);

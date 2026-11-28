@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView } from './coreClient';
+import { CoreClient, inTauri, waitForEndpoint, type CoreEvent, type Meeting, type ModelView, type UiPreferences } from './coreClient';
 import {
   EMPTY_TRANSCRIPT,
   CALENDAR_SETTINGS_URI,
@@ -18,9 +18,12 @@ import { Notes } from './notes/Notes';
 import { Palette } from './notes/Palette';
 import { Today } from './Today';
 import { Consent } from './Consent';
-import { PrivacyData } from './settings/PrivacyData';
+import { Settings } from './settings/Settings';
+import { Onboarding } from './Onboarding';
+import { setLanguage, detectLanguage, useI18n, stateLabel } from './i18n/useI18n';
 import { DeleteConfirmation } from './settings/DeleteConfirmation';
 import { trayState } from './trayState';
+import { trapDialogFocus } from './dialogFocus';
 
 const SLOW_START_MS = 1500;
 const ACTIVE_STATES = new Set(['starting', 'recording', 'degraded', 'processing']);
@@ -33,6 +36,10 @@ const MAX_RECONNECT_BACKOFF_MS = 8000;
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 export function App() {
+  const { t, errorMessage } = useI18n();
+  const translation = useRef(t);
+  translation.current = t;
+  const [preferences, setPreferences] = useState<UiPreferences>();
   const [client, setClient] = useState<CoreClient>();
   const [slowStart, setSlowStart] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -41,17 +48,20 @@ export function App() {
   const [levels, setLevels] = useState<Levels>(SILENT_LEVELS);
   const [banners, setBanners] = useState<Partial<Record<PermissionKind, string>>>({});
   const [state, setState] = useState('idle');
-  const [error, setError] = useState<string>();
-  const [view, setView] = useState<'live' | 'models' | 'notes' | 'privacy'>('live');
+  const [error, setError] = useState<unknown>();
+  const [view, setView] = useState<'live' | 'models' | 'notes' | 'settings'>('live');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>();
   const [highlightedSegmentId, setHighlightedSegmentId] = useState<number | undefined>();
   const [coreAlive, setCoreAlive] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [upcoming, setUpcoming] = useState<{ eventId: string; title: string }>();
   const [consentMeetingId, setConsentMeetingId] = useState<string | null>();
   const [deleting, setDeleting] = useState<Meeting>();
-  const privacyButton = useRef<HTMLButtonElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const preparingRecording = useRef(false);
+  const resumableDownloads = useRef(new Set<string>());
+  const recordingMeeting = useRef('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,6 +79,17 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!client) return;
+    let alive = true;
+    void client.uiPreferences().then(async (value) => {
+      const language = value.language || detectLanguage(navigator.language);
+      if (!value.language) await client.saveUiPreferences({ language });
+      if (alive) { setLanguage(language); setPreferences({ ...value, language }); }
+    }).catch((e: unknown) => { if (alive) setError(e); });
+    return () => { alive = false; };
+  }, [client]);
+
   const refreshMeetings = useCallback(async (core: CoreClient) => {
     setMeetings(await core.meetings());
   }, []);
@@ -81,6 +102,7 @@ export function App() {
       const data = event.data;
       switch (event.name) {
         case 'recording.state':
+          recordingMeeting.current = text(data.meetingId);
           setState(text(data.state));
           if (data.state !== 'recording' && data.state !== 'degraded') setLevels(SILENT_LEVELS);
           void refreshMeetings(client);
@@ -116,13 +138,13 @@ export function App() {
           if (data.code === PERMISSION_MISSING) {
             setBanners((current) => ({ ...current, system_audio: SYSTEM_AUDIO_SETTINGS_URI }));
           } else {
-            setError(`${text(data.code)}: ${text(data.message)}`);
+            setError({ code: data.code });
           }
           break;
         case 'calendar.upcoming': {
           const title = text(data.title);
           setUpcoming({ eventId: text(data.eventId), title });
-          if (inTauri()) void invoke('notify', { title, body: 'Starts in 1 minute' }).catch(() => undefined);
+          if (inTauri()) void invoke('notify', { title, body: translation.current('starts_soon') }).catch(() => undefined);
           break;
         }
         case 'model.download':
@@ -150,8 +172,8 @@ export function App() {
       }
     };
     void runSubscribe();
-    void refreshMeetings(client).catch((e: unknown) => setError(String(e)));
-    void client.models().then(setModels).catch((e: unknown) => setError(String(e)));
+    void refreshMeetings(client).catch((e: unknown) => setError(e));
+    void client.models().then(setModels).catch((e: unknown) => setError(e));
     return () => controller.abort();
   }, [client, refreshMeetings]);
 
@@ -181,6 +203,7 @@ export function App() {
         setPaletteOpen((open) => !open);
       }
       if (e.key === 'Escape') setPaletteOpen(false);
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); setShortcutsOpen((open) => !open); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -194,7 +217,7 @@ export function App() {
   useEffect(() => {
     if (!inTauri() || lastTray.current === tray) return;
     lastTray.current = tray;
-    void invoke('set_tray_state', { state: tray }).catch((e: unknown) => setError(`Tray indicator unavailable: ${String(e)}`));
+    void invoke('set_tray_state', { state: tray }).catch((e: unknown) => setError(e));
   }, [tray]);
 
   const record = async () => {
@@ -207,14 +230,14 @@ export function App() {
       const currentMeetings = await client.meetings();
       setMeetings(currentMeetings);
       const meeting = currentMeetings.find((meeting) => meeting.id === id);
-      if (id && !meeting) throw new Error('Unknown meeting');
+      if (id && !meeting) throw new Error(t('unknown_meeting'));
       if (settings.reminder_enabled && meeting?.consentAckAt == null) {
         setConsentMeetingId(id ?? null);
       } else {
-        await startRecording(id ?? (await client.createMeeting('Untitled meeting')).id);
+        await startRecording(id ?? (await client.createMeeting(t('untitled'))).id);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     } finally {
       preparingRecording.current = false;
     }
@@ -231,7 +254,7 @@ export function App() {
       await refreshMeetings(client);
     } catch (e) {
       setState('failed');
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
       if ((e as { code?: string }).code === MODEL_MISSING) setView('models');
     }
   };
@@ -241,19 +264,36 @@ export function App() {
     try {
       await client.stopRecording();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
 
   const download = async (id: string) => {
     if (!client) return;
+    resumableDownloads.current.add(id);
     setModels((current) => current.map((m) => (m.id === id ? { ...m, state: 'downloading', error: undefined } : m)));
     try {
       await client.downloadModel(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(e);
     }
   };
+
+  useEffect(() => {
+    if (!client) return;
+    for (const model of models) {
+      if (model.state === 'installed') resumableDownloads.current.delete(model.id);
+      if (model.state !== 'failed' || !resumableDownloads.current.delete(model.id)
+        || model.downloadedBytes <= 0 || /checksum|no space|disk full/i.test(model.error ?? '')) continue;
+      // shortcut: one automatic resume per explicit download; add bounded backoff if repeated interruptions become common.
+      setModels((current) => current.map((value) => value.id === model.id ? { ...value, state: 'downloading', error: undefined } : value));
+      void client.downloadModel(model.id).catch((e: unknown) => {
+        setError(e);
+        setModels((current) => current.map((value) => value.id === model.id && value.state === 'downloading'
+          ? { ...value, state: 'failed', error: 'download_failed' } : value));
+      });
+    }
+  }, [client, models]);
 
   const openMeetingNotes = (id: string, segmentId?: number) => {
     setSelectedMeetingId(id);
@@ -261,45 +301,55 @@ export function App() {
     setView('notes');
   };
 
+  const audioTestDisposed = (id: string) => {
+    if (recordingMeeting.current === id) setTranscript(EMPTY_TRANSCRIPT);
+    if (client) void refreshMeetings(client).catch(setError);
+  };
+
   return (
     <main>
       <h1>Interline</h1>
-      {!client && slowStart && <p>Starting Interline...</p>}
+      {!client && slowStart && <p>{t('starting_app')}</p>}
       <div className={`recording-bar${status === 'recording' ? ' live' : ''}`}>
-        <button type="button" onClick={record} disabled={!client || busy}>Record</button>
-        <button type="button" onClick={stop} disabled={!client || state !== 'recording'}>Stop</button>
-        <button type="button" onClick={() => setView(view === 'models' ? 'live' : 'models')}>Models</button>
-        <button type="button" onClick={() => setPaletteOpen(true)}>Search</button>
-        <button ref={privacyButton} type="button" disabled={!client} onClick={() => {
-          if (view === 'privacy') { setView('live'); privacyButton.current?.focus(); } else setView('privacy');
-        }}>{view === 'privacy' ? 'Back to meetings' : 'Privacy and data'}</button>
-        <p role="status">{status}</p>
+        <button type="button" onClick={record} disabled={!client || busy}>{t('record')}</button>
+        <button type="button" onClick={stop} disabled={!client || state !== 'recording'}>{t('stop')}</button>
+        <button type="button" onClick={() => setView(view === 'models' ? 'live' : 'models')}>{t('models')}</button>
+        <button type="button" onClick={() => setPaletteOpen(true)}>{t('search')}</button>
+        <button ref={settingsButton} type="button" disabled={!client} onClick={() => {
+          if (view === 'settings') { setView('live'); settingsButton.current?.focus(); } else setView('settings');
+        }}>{t(view === 'settings' ? 'back_meetings' : 'settings')}</button>
+        <p role="status">{stateLabel(status, t)}</p>
         <Meters levels={levels} />
       </div>
-      {status === 'capture restarting' && <p role="alert">Capture restarting, audio is being recovered...</p>}
+      {status === 'capture restarting' && <p role="alert">{t('capture_restarting')}</p>}
       {(Object.entries(banners) as [PermissionKind, string][]).map(([kind, uri]) => (
         <PermissionBanner key={kind} kind={kind} settingsUri={uri} />
       ))}
-      {error && <p role="alert">{error}</p>}
+      {Boolean(error) && <p role="alert">{errorMessage(error)}</p>}
       {upcoming && client && (
-        <p role="status" aria-label="Upcoming meeting">
-          {upcoming.title} starts in 1 minute{' '}
+        <p role="status" aria-label={t('upcoming_meeting')}>
+          {upcoming.title} {t('starts_soon')}{' '}
           <button type="button" onClick={() => {
-            void client.meetingFromEvent(upcoming.eventId).then(({ id }) => { setUpcoming(undefined); void refreshMeetings(client); openMeetingNotes(id); }).catch((e: unknown) => setError(String(e)));
-          }}>Take notes</button>{' '}
-          <button type="button" onClick={() => setUpcoming(undefined)}>Dismiss</button>
+            void client.meetingFromEvent(upcoming.eventId).then(({ id }) => { setUpcoming(undefined); void refreshMeetings(client); openMeetingNotes(id); }).catch((e: unknown) => setError(e));
+          }}>{t('take_notes')}</button>{' '}
+          <button type="button" onClick={() => setUpcoming(undefined)}>{t('dismiss')}</button>
         </p>
       )}
-      {view === 'privacy' && client ? (
-        <PrivacyData client={client} onChanged={() => { void refreshMeetings(client); }} />
+      {client && preferences && !preferences.onboarding_done ? (
+        <Onboarding client={client} models={models} onDownload={(id) => { void download(id); }} levels={levels} active={busy}
+          onTestDisposed={audioTestDisposed} onError={setError} onChanged={() => { void refreshMeetings(client); }}
+          onComplete={() => setPreferences({ ...preferences, onboarding_done: true })} />
+      ) : view === 'settings' && client ? (
+        <Settings client={client} models={models} onDownload={(id) => { void download(id); }} levels={levels} active={busy}
+          onTestDisposed={audioTestDisposed} onError={setError} onChanged={() => { void refreshMeetings(client); }} />
       ) : view === 'models' ? (
         <Models models={models} onDownload={(id) => void download(id)} />
       ) : view === 'notes' && selectedMeetingId ? (
         <Notes client={client!} meetingId={selectedMeetingId} coreAlive={coreAlive} highlightedSegmentId={highlightedSegmentId} />
       ) : (
         <>
-          <h2>Transcript</h2>
-          <ul aria-label="Transcript">
+          <h2>{t('transcript')}</h2>
+          <ul aria-label={t('transcript')} aria-live="polite">
             {transcript.rows.map((row) => (
               <li key={row.key} aria-busy={!row.final} className={row.final ? undefined : 'partial'}>
                 <strong>{row.speaker}</strong> {row.text}
@@ -307,27 +357,28 @@ export function App() {
             ))}
           </ul>
           {client && <Today client={client} onOpenMeeting={(id) => { void refreshMeetings(client); openMeetingNotes(id); }} />}
-          <h2>Meetings</h2>
-          <ul aria-label="Meetings">
+          <h2>{t('meetings')}</h2>
+          <ul aria-label={t('meetings')}>
             {meetings.map((meeting) => (
               <li key={meeting.id}>
-                {meeting.title || meeting.id.slice(0, 8)} - {meeting.status}{' '}
-                <button type="button" className="link" onClick={() => openMeetingNotes(meeting.id)} aria-label="Open notes">
-                  notes
+                {meeting.title || meeting.id.slice(0, 8)} - {stateLabel(meeting.status, t)}{' '}
+                <button type="button" className="link" onClick={() => openMeetingNotes(meeting.id)} aria-label={t('open_notes')}>
+                  {t('notes')}
                 </button>{' '}
-                <button type="button" disabled={busy} aria-label={`Delete ${meeting.title || 'Untitled meeting'}`} onClick={() => setDeleting(meeting)}>Delete</button>
+                <button type="button" disabled={busy} aria-label={t('delete_named', { name: meeting.title || t('untitled') })} onClick={() => setDeleting(meeting)}>{t('delete')}</button>
               </li>
             ))}
           </ul>
         </>
       )}
-      {deleting && client && <DeleteConfirmation title={deleting.title || 'Untitled meeting'} permanent={false} onCancel={() => setDeleting(undefined)} onConfirm={async () => {
+      {deleting && client && <DeleteConfirmation title={deleting.title || t('untitled')} permanent={false} onCancel={() => setDeleting(undefined)} onConfirm={async () => {
         await client.deleteMeeting(deleting.id);
         if (selectedMeetingId === deleting.id) setSelectedMeetingId(undefined);
-        await refreshMeetings(client); setDeleting(undefined); requestAnimationFrame(() => privacyButton.current?.focus());
+        await refreshMeetings(client); setDeleting(undefined); requestAnimationFrame(() => settingsButton.current?.focus());
       }} />}
       {paletteOpen && client && (
         <Palette
+          onOpenSettings={() => { setView('settings'); setPaletteOpen(false); }}
           client={client}
           onClose={() => setPaletteOpen(false)}
           onOpenMeeting={(id: string, segmentId?: number) => {
@@ -338,11 +389,12 @@ export function App() {
           }}
         />
       )}
+      {shortcutsOpen && <Shortcuts onClose={() => setShortcutsOpen(false)} />}
       {consentMeetingId !== undefined && client && (
         <Consent locale={document.documentElement.lang || navigator.language}
           onCancel={() => setConsentMeetingId(undefined)}
           onContinue={async (doNotRemind) => {
-            const id = consentMeetingId ?? (await client.createMeeting('Untitled meeting')).id;
+            const id = consentMeetingId ?? (await client.createMeeting(t('untitled'))).id;
             setConsentMeetingId(id);
             setSelectedMeetingId(id);
             await client.acknowledgeConsent(id);
@@ -353,4 +405,18 @@ export function App() {
       )}
     </main>
   );
+}
+
+function Shortcuts({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const element = dialog.current!;
+    element.showModal();
+    return () => { element.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, []);
+  return <dialog ref={dialog} aria-modal="true" aria-label={t('shortcuts')} onKeyDown={trapDialogFocus} onCancel={(e) => { e.preventDefault(); onClose(); }}>
+    <h2>{t('shortcuts')}</h2><p>{t('shortcut_search')}</p><button type="button" onClick={onClose}>{t('dismiss')}</button>
+  </dialog>;
 }
