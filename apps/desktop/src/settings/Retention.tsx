@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import { useEffect, useState } from 'react';
 import type { AudioRetention } from '../coreClient';
 
@@ -5,6 +6,7 @@ export function Retention({ load, save }: {
   load: () => Promise<{ audio_retention: AudioRetention }>;
   save: (value: AudioRetention) => Promise<unknown>;
 }) {
+  const { t } = useI18n();
   const [value, setValue] = useState<AudioRetention>('7d');
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('');
@@ -16,20 +18,20 @@ export function Retention({ load, save }: {
       .finally(() => { if (current) setBusy(false); });
     return () => { current = false; };
   }, [load]);
-  return <section aria-label="Audio storage">
-    <h3>Audio retention</h3>
-    <label>Audio retention <select value={value} disabled={busy} onChange={(event) => {
+  return <section aria-label={t('audio_storage')}>
+    <h3>{t('audio_retention')}</h3>
+    <label>{t('audio_retention')} <select value={value} disabled={busy} onChange={(event) => {
       const next = event.target.value as AudioRetention;
       setBusy(true); setError(''); setMessage('');
-      void save(next).then(() => { setValue(next); setMessage('Audio retention saved.'); })
+      void save(next).then(() => { setValue(next); setMessage(t('retention_saved')); })
         .catch((e: unknown) => setError(String(e))).finally(() => setBusy(false));
     }}>
-      <option value="after_transcription">Delete after transcription</option>
-      <option value="7d">7 days after the meeting</option>
-      <option value="30d">30 days after the meeting</option>
-      <option value="forever">Keep forever</option>
+      <option value="after_transcription">{t('delete_after_transcription')}</option>
+      <option value="7d">{t('seven_days')}</option>
+      <option value="30d">{t('thirty_days')}</option>
+      <option value="forever">{t('keep_forever')}</option>
     </select></label>
-    <p>Audio from before this upgrade is kept without an automatic deletion deadline. Retention applies when a meeting next ends. Changes can extend scheduled deadlines or cancel them with Keep forever, but never shorten them. Notes and transcripts stay until you delete the meeting.</p>
+    <p>{t('retention_description')}</p>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
   </section>;
 }

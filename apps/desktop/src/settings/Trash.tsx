@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import { useEffect, useRef, useState } from 'react';
 import type { TrashedMeeting } from '../coreClient';
 import { DeleteConfirmation } from './DeleteConfirmation';
@@ -6,6 +7,7 @@ export function Trash({ load, restore, erase, onChanged }: {
   load: () => Promise<TrashedMeeting[]>; restore: (id: string) => Promise<void>;
   erase: (id: string) => Promise<void>; onChanged?: () => void;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<TrashedMeeting[]>([]);
   const [selected, setSelected] = useState<TrashedMeeting>();
   const [message, setMessage] = useState('');
@@ -19,21 +21,21 @@ export function Trash({ load, restore, erase, onChanged }: {
   }, [load]);
   useEffect(() => { if (message) heading.current?.focus(); }, [message]);
   const refresh = async () => { setItems(await load()); onChanged?.(); heading.current?.focus(); };
-  return <section aria-label="Trash"><h3 ref={heading} tabIndex={-1}>Trash</h3>
-    <p>Meetings are permanently erased after 30 days in trash.</p>
+  return <section aria-label={t('trash')}><h3 ref={heading} tabIndex={-1}>{t('trash')}</h3>
+    <p>{t('trash_expiry')}</p>
     {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
-    <ul aria-label="Trashed meetings">{items.map((item) => <li key={item.id}>
-      {item.title || 'Untitled meeting'}{' '}
-      {item.deletionStarted && <span>Permanent deletion pending. Restore unavailable. </span>}
-      <button type="button" disabled={busy || item.deletionStarted} aria-label={`Restore ${item.title || 'Untitled meeting'}`} onClick={() => {
+    <ul aria-label={t('trashed_meetings')}>{items.map((item) => <li key={item.id}>
+      {item.title || t('untitled')}{' '}
+      {item.deletionStarted && <span>{t('deletion_pending')}</span>}
+      <button type="button" disabled={busy || item.deletionStarted} aria-label={t('restore_named', { name: item.title || t('untitled') })} onClick={() => {
         setBusy(true); setError(''); setMessage('');
-        void restore(item.id).then(refresh).then(() => setMessage('Meeting restored.'))
+        void restore(item.id).then(refresh).then(() => setMessage(t('meeting_restored')))
           .catch((e: unknown) => setError(String(e))).finally(() => setBusy(false));
-      }}>Restore</button>{' '}
-      <button type="button" disabled={busy} aria-label={`Permanently delete ${item.title || 'Untitled meeting'}`} onClick={() => setSelected(item)}>Delete permanently</button>
+      }}>{t('restore')}</button>{' '}
+      <button type="button" disabled={busy} aria-label={t('erase_named', { name: item.title || t('untitled') })} onClick={() => setSelected(item)}>{t('delete_permanently')}</button>
     </li>)}</ul>
-    {selected && <DeleteConfirmation title={selected.title || 'Untitled meeting'} permanent onCancel={() => setSelected(undefined)} onConfirm={async () => {
-      setMessage(''); await erase(selected.id); await refresh(); setSelected(undefined); setMessage('Meeting permanently deleted.');
+    {selected && <DeleteConfirmation title={selected.title || t('untitled')} permanent onCancel={() => setSelected(undefined)} onConfirm={async () => {
+      setMessage(''); await erase(selected.id); await refresh(); setSelected(undefined); setMessage(t('meeting_erased'));
     }} />}
   </section>;
 }

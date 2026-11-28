@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { inTauri, type CoreClient } from '../coreClient';
@@ -7,6 +8,7 @@ import { Privacy } from './Privacy';
 import { FileVaultNotice, type FileVaultState } from './FileVaultNotice';
 
 export function PrivacyData({ client, onChanged }: { client: CoreClient; onChanged: () => void }) {
+  const { t } = useI18n();
   const heading = useRef<HTMLHeadingElement>(null);
   const [fileVault, setFileVault] = useState<FileVaultState>('unknown');
   useEffect(() => {
@@ -16,8 +18,8 @@ export function PrivacyData({ client, onChanged }: { client: CoreClient; onChang
   const retention = useCallback(() => client.retention(), [client]);
   const trash = useCallback(() => client.trash(), [client]);
   const privacy = useCallback(() => client.privacy(), [client]);
-  return <section aria-label="Privacy and data">
-    <h2 ref={heading} tabIndex={-1}>Privacy and data</h2>
+  return <section aria-label={t('privacy_data')}>
+    <h2 ref={heading} tabIndex={-1}>{t('privacy_data')}</h2>
     <FileVaultNotice state={fileVault} />
     <Retention load={retention} save={(value) => client.setRetention(value)} />
     <Trash load={trash} restore={(id) => client.restoreMeeting(id)} erase={(id) => client.eraseMeeting(id)} onChanged={onChanged} />

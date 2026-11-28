@@ -1,3 +1,5 @@
+import { useI18n } from '../i18n/useI18n';
+import { trapDialogFocus } from '../dialogFocus';
 import { useEffect, useRef, useState } from 'react';
 import { CoreClient, type SearchHit } from '../coreClient';
 
@@ -5,16 +7,23 @@ interface Props {
   client: CoreClient;
   onClose: () => void;
   onOpenMeeting: (meetingId: string, segmentId?: number) => void;
+  onOpenSettings?: () => void;
 }
 
-export function Palette({ client, onClose, onOpenMeeting }: Props) {
+export function Palette({ client, onClose, onOpenMeeting, onOpenSettings }: Props) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchHit[]>([]);
   const [selected, setSelected] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
+    const previous = document.activeElement;
+    const dialog = dialogRef.current!;
+    dialog.showModal();
     inputRef.current?.focus();
+    return () => { dialog.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
 
   useEffect(() => {
@@ -51,7 +60,7 @@ export function Palette({ client, onClose, onOpenMeeting }: Props) {
   };
 
   return (
-    <div className="palette-overlay" role="dialog" aria-label="Search" onClick={onClose}>
+    <dialog ref={dialogRef} className="palette-dialog" aria-modal="true" aria-label={t('search')} onKeyDown={trapDialogFocus} onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="palette" onClick={(e) => e.stopPropagation()}>
         <input
           ref={inputRef}
@@ -59,14 +68,18 @@ export function Palette({ client, onClose, onOpenMeeting }: Props) {
           role="combobox"
           aria-expanded={results.length > 0}
           aria-activedescendant={selected >= 0 ? `search-result-${selected}` : undefined}
-          placeholder="Search notes and transcript..."
+          placeholder={t('search_placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          aria-label="Search notes and transcript"
+          aria-label={t('search_label')}
         />
-        {query.length >= 2 && results.length === 0 && <p>No results</p>}
-        <ul role="listbox" aria-label="Search results">
+        <div className="settings-actions">
+          {onOpenSettings && <button type="button" onClick={onOpenSettings}>{t('settings')}</button>}
+          <button type="button" onClick={onClose}>{t('dismiss')}</button>
+        </div>
+        {query.length >= 2 && results.length === 0 && <p>{t('no_results')}</p>}
+        <ul role="listbox" aria-label={t('search_results')}>
           {results.map((hit, index) => (
             <li
               key={`${hit.type}-${hit.id}`}
@@ -87,6 +100,6 @@ export function Palette({ client, onClose, onOpenMeeting }: Props) {
           ))}
         </ul>
       </div>
-    </div>
+    </dialog>
   );
 }

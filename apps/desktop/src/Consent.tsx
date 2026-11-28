@@ -1,22 +1,19 @@
+import { en } from './i18n/en';
+import { fr } from './i18n/fr';
+import { detectLanguage, translate, useI18n } from './i18n/useI18n';
+import { trapDialogFocus } from './dialogFocus';
 import { useEffect, useId, useRef, useState } from 'react';
 
-export const CONSENT_SENTENCES = {
-  en: 'I would like to record this meeting to help with my notes. Is everyone comfortable with that?',
-  fr: 'Je souhaite enregistrer cette réunion pour ma prise de notes. Est-ce que tout le monde est d’accord ?',
-};
+export const CONSENT_SENTENCES = { en: en.consent_sentence, fr: fr.consent_sentence };
 
-const COPY = {
-  en: { title: 'Before recording', reminder: "Recording may need every participant's agreement. Please inform everyone before continuing.", copy: 'Copy', copied: 'Copied', checkbox: 'Do not remind me again', continue: 'Continue', cancel: 'Cancel', clipboardError: 'Could not copy. You can select and copy the sentence yourself.' },
-  fr: { title: 'Avant d’enregistrer', reminder: 'Un enregistrement peut nécessiter l’accord de chaque participant. Veuillez informer tout le monde avant de continuer.', copy: 'Copier', copied: 'Copié', checkbox: 'Ne plus me le rappeler', continue: 'Continuer', cancel: 'Annuler', clipboardError: 'Copie impossible. Vous pouvez sélectionner et copier la phrase vous-même.' },
-};
-
-export function Consent({ locale = navigator.language, onContinue, onCancel }: {
+export function Consent({ locale, onContinue, onCancel }: {
   locale?: string;
   onContinue: (doNotRemind: boolean) => Promise<void>;
   onCancel: () => void;
 }) {
-  const language = locale.toLowerCase().startsWith('fr') ? 'fr' : 'en';
-  const text = COPY[language];
+  const current = useI18n();
+  const language = locale ? detectLanguage(locale) : current.language;
+  const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
   const titleId = useId();
   const reminderId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -43,7 +40,7 @@ export function Consent({ locale = navigator.language, onContinue, onCancel }: {
       await navigator.clipboard.writeText(CONSENT_SENTENCES[language]);
       setCopied(true);
     } catch {
-      setError(text.clipboardError);
+      setError(t('clipboard_error'));
     }
   };
 
@@ -71,24 +68,18 @@ export function Consent({ locale = navigator.language, onContinue, onCancel }: {
           e.preventDefault();
           if (!submitting.current) onCancel();
         }
-        if (e.key === 'Tab') {
-          const controls = [...e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')];
-          const first = controls[0];
-          const last = controls[controls.length - 1];
-          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
-        }
+        trapDialogFocus(e);
       }}>
-      <h2 id={titleId}>{text.title}</h2>
-      <p id={reminderId}>{text.reminder}</p>
+      <h2 id={titleId}>{t('consent_title')}</h2>
+      <p id={reminderId}>{t('consent_reminder')}</p>
       <p>{CONSENT_SENTENCES[language]}</p>
-      <button type="button" onClick={() => void copy()}>{text.copy}</button>
-      {copied && <p role="status">{text.copied}</p>}
-      <label><input type="checkbox" checked={doNotRemind} disabled={busy} onChange={(e) => setDoNotRemind(e.target.checked)} />{text.checkbox}</label>
+      <button type="button" onClick={() => void copy()}>{t('copy')}</button>
+      {copied && <p role="status">{t('copied')}</p>}
+      <label><input type="checkbox" checked={doNotRemind} disabled={busy} onChange={(e) => setDoNotRemind(e.target.checked)} />{t('consent_checkbox')}</label>
       {error && <p role="alert">{error}</p>}
       <div className="consent-actions">
-        <button type="button" disabled={busy} onClick={onCancel}>{text.cancel}</button>
-        <button type="button" disabled={busy} onClick={() => void proceed()}>{text.continue}</button>
+        <button type="button" disabled={busy} onClick={onCancel}>{t('cancel')}</button>
+        <button type="button" disabled={busy} onClick={() => void proceed()}>{t('continue')}</button>
       </div>
     </dialog>
   );

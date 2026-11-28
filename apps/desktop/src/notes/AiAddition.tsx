@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import React from 'react';
 import { CitationChip } from './CitationChip';
 
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export const AiAddition: React.FC<Props> = ({ blockId, text, state, sources, onSelectSource, onAccept, onDelete }) => {
+  const { t } = useI18n();
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -38,7 +40,7 @@ export const AiAddition: React.FC<Props> = ({ blockId, text, state, sources, onS
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <span className="sr-only">AI addition</span>
+      <span className="sr-only">{t('ai_addition')}</span>
       <p>{text}</p>
       {sources.map((s) => (
         <CitationChip key={s.segmentId} segmentId={s.segmentId} label={s.label} onSelect={onSelectSource} />

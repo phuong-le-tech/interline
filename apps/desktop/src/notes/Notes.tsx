@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/useI18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CoreClient, type Block, type BlockPayload as ApiBlockPayload, type Provider } from '../coreClient';
 import { openJournal, replay, submitEdit, type BlockPayload as JournalPayload, type Journal } from './journal';
@@ -30,6 +31,7 @@ function journalPayload(kind: string, position: string, content: string, plainTe
 }
 
 export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Props) {
+  const { t } = useI18n();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [mode, setMode] = useState<ViewMode>('enhanced');
@@ -82,7 +84,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
     }).then(() => refreshBlocks());
   }, [coreAlive, client, refreshBlocks]);
 
-  const hasProvider = providers.some((p) => p.has_key);
+  const hasProvider = providers.some((p) => (p.has_key || p.kind === 'ollama'));
   const userBlocks = blocks.filter((b) => b.origin === 'user');
   const aiBlocks = blocks.filter((b) => b.origin === 'ai');
   const additions = aiBlocks.filter((b) => b.parent_id);
@@ -99,7 +101,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
     if (ok) {
       await refreshBlocks();
     } else if (coreAlive) {
-      setError('Failed to save a note.');
+      setError(t('save_failed'));
     }
   };
 
@@ -110,7 +112,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
     try {
       const result = await client.enhance(meetingId);
       if (result.status === 'invalid_output') {
-        setError(result.message ?? 'The model did not respect the format');
+        setError(result.message ?? t('invalid_format'));
       }
       await refreshBlocks();
     } catch (e) {
@@ -146,11 +148,11 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
   useEffect(() => {
     if (highlightedSegment == null || !transcriptRef.current) return;
     const item = transcriptRef.current.querySelector(`[data-segment-id="${highlightedSegment}"]`);
-    item?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    item?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
   }, [highlightedSegment]);
 
   if (loading) {
-    return <p role="status">Loading notes...</p>;
+    return <p role="status">{t('loading_notes')}</p>;
   }
 
   return (
@@ -159,12 +161,12 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
       <div className="notes-toolbar">
         <EnhancedToggle mode={mode} onChange={setMode} />
         <button type="button" onClick={enhance} disabled={!hasProvider || enhancing}>
-          Enhance
+          {t('enhance')}
         </button>
-        {!hasProvider && <span>Configure a provider</span>}
+        {!hasProvider && <span>{t('configure_provider')}</span>}
       </div>
       {error && <p role="alert">{error}</p>}
-      {!coreAlive && <p role="status">Interline is restarting its engine</p>}
+      {!coreAlive && <p role="status">{t('engine_restarting')}</p>}
       <UserEditor blocks={userBlocks} onChange={sendBlock} />
       {mode === 'enhanced' && (
         <>
@@ -185,7 +187,7 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
           ))}
           {otherPoints.length > 0 && (
             <div className="other-points">
-              <h3>Other points</h3>
+              <h3>{t('other_points')}</h3>
               {otherPoints.map((block) => (
                 <AiAddition
                   key={block.id}
@@ -205,8 +207,8 @@ export function Notes({ client, meetingId, coreAlive, highlightedSegmentId }: Pr
           )}
         </>
       )}
-      <h2>Transcript</h2>
-      <ul aria-label="Transcript" ref={transcriptRef}>
+      <h2>{t('transcript')}</h2>
+      <ul aria-label={t('transcript')} ref={transcriptRef}>
         {transcript.map((seg) => (
           <li
             key={seg.id}
@@ -254,6 +256,7 @@ function hex(nibbles: number, variant: boolean = false): string {
 const SAVE_DEBOUNCE_MS = 300;
 
 function UserEditor({ blocks, onChange }: UserEditorProps) {
+  const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -300,7 +303,7 @@ function UserEditor({ blocks, onChange }: UserEditorProps) {
     <div
       ref={editorRef}
       role="textbox"
-      aria-label="Notes"
+      aria-label={t('notes')}
       aria-multiline="true"
       contentEditable
       className="notes-editor"
